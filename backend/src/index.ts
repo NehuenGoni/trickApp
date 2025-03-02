@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import mongoose from "mongoose";
 import authRoutes from "./routes/auth.routes";
+import tournamentRoutes from "./routes/tournament.routes"
+import matchRoutes from "./routes/match.routes"
 
 dotenv.config();
 
@@ -17,13 +19,17 @@ mongoose
   .then(() => console.log("✅ Conectado a MongoDB"))
   .catch((err) => console.error("❌ Error conectando a MongoDB:", err));
 
-// Rutas de autenticación
+// Auth
 app.use("/api/auth", authRoutes);
 
-// Ruta de prueba
+// Test
 app.get("/", (req, res) => {
   res.send("¡Servidor funcionando!");
 });
+
+//Tournament
+app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/matches", matchRoutes);
 
 const PORT = process.env.PORT
 app.listen(PORT, () => {
