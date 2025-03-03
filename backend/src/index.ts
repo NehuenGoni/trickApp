@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import authRoutes from "./routes/auth.routes";
 import tournamentRoutes from "./routes/tournament.routes"
 import matchRoutes from "./routes/match.routes"
+import leagueRoutes from "./routes/league.routes"
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ app.get("/", (req, res) => {
 //Tournament
 app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/matches", matchRoutes);
+app.use("/api/leagues", leagueRoutes);
 
 const PORT = process.env.PORT
 app.listen(PORT, () => {
