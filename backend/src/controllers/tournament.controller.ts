@@ -9,17 +9,17 @@ interface AuthRequest extends Request {
   
 // Crear torneo
 export const createTournament = async (req: AuthRequest, res: Response) => {
-  const { name, startDate, endDate, description, players } = req.body;
+  const { name, startDate, description, players } = req.body;
   const createdBy = req.user;
   
   try {
     const tournament = new TournamentModel({
       name,
       startDate,
-      endDate,
       description,
       players,
       createdBy,
+      status: 'upcoming'
     });
     await tournament.save();
     res.status(201).json(tournament);
@@ -117,7 +117,8 @@ export const addPlayerToTournament = async (req: Request, res: Response) => {
 // Crear un equipo en un torneo
 export const createTeamInTournament = async (req: Request, res: Response) => {
     try {
-      const { tournamentId, playerIds } = req.body;
+      const { tournamentId } = req.params;
+      const { name, members } = req.body;
   
       // Verificar si el torneo existe
       const tournament = await TournamentModel.findById(tournamentId);
@@ -126,28 +127,29 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
         return 
       }
   
-      // Verificar que los jugadores existan
-      const players = await User.find({ _id: { $in: playerIds } });
-      if (players.length !== playerIds.length) {
-        res.status(400).json({ message: "Uno o más jugadores no existen" });
-        return 
-      }
-  
       // Crear el equipo
       const newTeam = {
         teamId: new mongoose.Types.ObjectId(),
-        players: playerIds.map((id: string) => {
-            if (!mongoose.Types.ObjectId.isValid(id)) {
-              throw new Error("Invalid player ID");
-            }
-            return new mongoose.Types.ObjectId(id);
-          }),
+        name: name,
+        players: members.map((member: any) => {
+          if ('isGuest' in member) {
+            return {
+              name: member.name,
+              isGuest: true
+            };
+          } else {
+            return {
+              playerId: member.playerId,
+              name: member.name
+            };
+          }
+        })
       };
   
       tournament.teams.push(newTeam);
       await tournament.save();
   
-      res.status(201).json({ message: "Equipo creado en el torneo", tournament });
+      res.status(201).json({ message: "Equipo creado en el torneo", team: newTeam });
     } catch (error) {
       res.status(500).json({ message: "Error al crear equipo", error });
     }

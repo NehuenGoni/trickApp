@@ -6,6 +6,7 @@ import authRoutes from "./routes/auth.routes";
 import tournamentRoutes from "./routes/tournament.routes"
 import matchRoutes from "./routes/match.routes"
 import leagueRoutes from "./routes/league.routes"
+import userRoutes from "./routes/user.routes";
 
 dotenv.config();
 
@@ -22,6 +23,9 @@ mongoose
 
 // Auth
 app.use("/api/auth", authRoutes);
+
+// Users
+app.use("/api/users", userRoutes);
 
 // Test
 app.get("/", (req, res) => {
