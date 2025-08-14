@@ -12,8 +12,10 @@ import {
 } from '@mui/material';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import NavBar from '../../components/NavBar';
+import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
+  const navigate = useNavigate();
   const [userData, setUserData] = useState({
     username: '',
     email: '',
@@ -33,8 +35,8 @@ const Profile = () => {
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setUserData(prev => ({
         ...prev,
-        username: data.username,
-        email: data.email
+        username: data.user.username,
+        email: data.user.email
       }));
     } catch (err) {
       setError('Error al cargar los datos del usuario');
@@ -75,6 +77,13 @@ const Profile = () => {
         newPassword: '',
         confirmPassword: ''
       }));
+
+      if (userData.newPassword) {
+        setTimeout(() => {
+          localStorage.removeItem('token');
+          navigate('/login');
+        }, 1500); // Espera 1.5 segundos para mostrar el mensaje
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al actualizar el perfil');
     }

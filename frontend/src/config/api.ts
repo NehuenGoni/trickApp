@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL
 
 const API_ROUTES = {
   AUTH: {
@@ -56,15 +56,15 @@ export const apiRequest = async (url: string, options: RequestInit = {}) => {
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 
-  console.log('🌐 API Request:', {
-    url,
-    method: options.method || 'GET',
-    headers: {
-      ...defaultHeaders,
-      ...options.headers
-    },
-    body: options.body ? JSON.parse(options.body as string) : undefined
-  });
+  // console.log('API Request:', {
+  //   url,
+  //   method: options.method || 'GET',
+  //   headers: {
+  //     ...defaultHeaders,
+  //     ...options.headers
+  //   },
+  //   body: options.body ? JSON.parse(options.body as string) : undefined
+  // });
 
   try {
     const response = await fetch(url, {
@@ -75,26 +75,28 @@ export const apiRequest = async (url: string, options: RequestInit = {}) => {
       }
     });
 
-    console.log('📥 API Response Status:', response.status, response.statusText);
+    // console.groupCollapsed(response)
+
+    // console.log(' API Response Status:', response.status, response.statusText);
     
     if (!response.ok) {
       const responseText = await response.text();
-      console.error('❌ API Error Response:', responseText);
+    //  console.error('API Error Response:', responseText);
       
       try {
         const error = JSON.parse(responseText);
         throw new Error(error.message || 'Error en la solicitud');
       } catch (parseError) {
-        console.error('❌ Error parsing response:', parseError);
+        console.error('Error parsing response:', parseError);
         throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
       }
     }
 
     const data = await response.json();
-    console.log('✅ API Response Data:', data);
+   // console.log('API Response Data:', data);
     return data;
   } catch (error) {
-    console.error('❌ API Request Error:', error);
+   // console.error('API Request Error:', error);
     throw error;
   }
 };

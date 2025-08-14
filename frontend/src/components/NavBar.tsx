@@ -63,7 +63,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const fetchUserData = async () => {
     try {
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
-      setUsername(data.username);
+      setUsername(data.user.username);
     } catch (err) {
       console.error('Error al cargar los datos del usuario');
     }
@@ -85,6 +85,13 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return '';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
   };
 
   const menuItems: MenuItem[] = [
@@ -122,9 +129,9 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
             onClick={handleMenu}
             color="inherit"
           >
-            <Avatar sx={{ width: 32, height: 32 }}>
-              {username.charAt(0).toUpperCase()}
-            </Avatar>
+          <Avatar sx={{ width: 32, height: 32 }}>
+            {getInitials(username)}
+          </Avatar>
           </IconButton>
           <Menu
             id="menu-appbar"

@@ -213,6 +213,7 @@ const CreateTournament = () => {
 
     try {
       // Crear el torneo
+      console.log('test')
       const tournamentResponse = await apiRequest(API_ROUTES.TOURNAMENTS.CREATE, {
         method: 'POST',
         body: JSON.stringify({
@@ -309,7 +310,6 @@ const CreateTournament = () => {
           throw new Error('No se encontraron los partidos del torneo');
         }
       } catch (matchError: any) {
-        // Si falla la creación de partidos, eliminar el torneo y los equipos
         console.error('Error al crear los partidos:', matchError);
         await apiRequest(API_ROUTES.TOURNAMENTS.DELETE(tournamentId), {
           method: 'DELETE'
@@ -317,16 +317,13 @@ const CreateTournament = () => {
         throw new Error(`Error al crear los partidos del torneo: ${matchError.response?.data?.message || matchError.message}`);
       }
 
-      // Redirigir a la página de detalles del torneo
       navigate(`/tournaments/${tournamentId}`);
     } catch (error: any) {
       console.error('Error al crear el torneo:', error);
       
       // Verificar si es un error de autenticación
       if (isAuthError(error)) {
-        // Limpiar el token del localStorage
         localStorage.removeItem('token');
-        // Redirigir al login
         navigate('/login', { 
           state: { 
             message: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.' 

@@ -7,7 +7,6 @@ interface AuthRequest extends Request {
     user?: string; // Agregamos la propiedad 'user'
   }
   
-// Crear torneo
 export const createTournament = async (req: AuthRequest, res: Response) => {
   const { name, startDate, description, players } = req.body;
   const createdBy = req.user;
@@ -81,7 +80,6 @@ export const deleteTournament = async (req: Request, res: Response) => {
   }
 };
 
-// Agregar un jugador a un torneo
 export const addPlayerToTournament = async (req: Request, res: Response) => {
     try {
       const { tournamentId, playerId } = req.body;
@@ -114,7 +112,6 @@ export const addPlayerToTournament = async (req: Request, res: Response) => {
   };
 
 
-// Crear un equipo en un torneo
 export const createTeamInTournament = async (req: Request, res: Response) => {
     try {
       const { tournamentId } = req.params;

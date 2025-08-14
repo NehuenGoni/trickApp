@@ -117,8 +117,12 @@ const Scoreboard = () => {
     }
   };
 
-  const handleExit = () => {
-    setExitDialogOpen(true);
+  const handleExit = async () => {
+    console.log(match?.tournament )
+    if (match && match?.tournament === 'friendly_matches') { 
+      await handleDeleteAndExit();
+    }
+    navigate('/dashboard');
   };
 
   const handleSaveAndExit = async () => {
@@ -139,9 +143,10 @@ const Scoreboard = () => {
   };
 
   const handleDeleteAndExit = async () => {
+    console.log(matchId)
     try {
       if (!matchId) return;
-      
+      console.log(matchId)
       await apiRequest(API_ROUTES.MATCHES.DELETE(matchId), {
         method: 'DELETE'
       });
@@ -241,7 +246,7 @@ const Scoreboard = () => {
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
           <Button
             variant="outlined"
-            onClick={() => navigate('/dashboard')}
+            onClick={handleExit}
           >
             Volver al Dashboard
           </Button>
