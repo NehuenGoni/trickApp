@@ -12,6 +12,7 @@ import TournamentList from './pages/tournaments/TournamentList';
 import CreateTournament from './pages/tournaments/CreateTournament';
 import TournamentDetails from './pages/tournaments/TournamentDetails';
 import PrivateRoute from './components/PrivateRoute';
+import Stats from './pages/stats/Stats';
 
 const theme = createTheme({
   palette: {
@@ -44,6 +45,12 @@ function App() {
           <Route path="/profile" element={
             <PrivateRoute>
               <Profile />
+            </PrivateRoute>
+          } />
+
+          <Route path="/stats" element={
+            <PrivateRoute>
+              <Stats />
             </PrivateRoute>
           } />
 

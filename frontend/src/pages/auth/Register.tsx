@@ -10,6 +10,7 @@ import {
   Alert
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import API_ROUTES, { apiRequest } from '../../config/api';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ const Register = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/register', {
+      const response = await apiRequest(API_ROUTES.AUTH.REGISTER, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

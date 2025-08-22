@@ -56,16 +56,6 @@ export const apiRequest = async (url: string, options: RequestInit = {}) => {
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 
-  // console.log('API Request:', {
-  //   url,
-  //   method: options.method || 'GET',
-  //   headers: {
-  //     ...defaultHeaders,
-  //     ...options.headers
-  //   },
-  //   body: options.body ? JSON.parse(options.body as string) : undefined
-  // });
-
   try {
     const response = await fetch(url, {
       ...options,
@@ -74,29 +64,28 @@ export const apiRequest = async (url: string, options: RequestInit = {}) => {
         ...options.headers
       }
     });
-
-    // console.groupCollapsed(response)
-
-    // console.log(' API Response Status:', response.status, response.statusText);
     
-    if (!response.ok) {
-      const responseText = await response.text();
-    //  console.error('API Error Response:', responseText);
-      
-      try {
-        const error = JSON.parse(responseText);
-        throw new Error(error.message || 'Error en la solicitud');
-      } catch (parseError) {
-        console.error('Error parsing response:', parseError);
-        throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
-      }
-    }
+    const responseText = await response.text();
 
-    const data = await response.json();
-   // console.log('API Response Data:', data);
-    return data;
+    const parsedData = responseText ? JSON.parse(responseText) : null;
+
+    if (!response.ok) {
+      let errorMessage = `Error del servidor: ${response.status} ${response.statusText}`;
+      
+      if (parsedData?.message) {
+        errorMessage = parsedData.message;
+      }
+
+      if (errorMessage === "Token inválido") {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
+
+      throw new Error(errorMessage);
+    }
+    return parsedData;
   } catch (error) {
-   // console.error('API Request Error:', error);
     throw error;
   }
 };
