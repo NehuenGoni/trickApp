@@ -27,6 +27,13 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 interface Team {
   teamId: string;
   score: number;
+  players: Player[]
+}
+
+interface Player {
+  playerId: string;
+  username: string;
+  isGuest?: boolean;
 }
 
 interface Match {
@@ -45,8 +52,9 @@ const Scoreboard = () => {
   const navigate = useNavigate();
   const [match, setMatch] = useState<Match | null>(null);
   const [error, setError] = useState('');
-  const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({}); // Para almacenar detalles de los equipos
+  const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const [userLogged, setUserLogged] = useState<string>('');
 
   useEffect(() => {
     fetchMatch();
@@ -60,9 +68,16 @@ const Scoreboard = () => {
 
     try {
       const matchData = await apiRequest(API_ROUTES.MATCHES.GET(matchId));
-      setMatch(matchData);
+
+      if (!matchData || !Array.isArray(matchData.teams)) {
+        throw new Error('Datos del partido inválidos');
+      }
       
-      // Obtenemos los detalles de los equipos
+      setMatch(matchData);
+
+      const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
+      setUserLogged(data.user._id)
+
       const teamIds = matchData.teams.map((team: { teamId: string }) => team.teamId).filter(Boolean);
       const teamsData: {[key: string]: { username: string }} = {};
       
@@ -100,7 +115,6 @@ const Scoreboard = () => {
         teams: updatedTeams
       };
 
-      // Si alguien llegó a 30, el partido termina
       if (newScore === MAX_SCORE) {
         updatedMatch.status = "finished";
         updatedMatch.winner = updatedMatch.teams[teamIndex].teamId;
@@ -160,7 +174,13 @@ const Scoreboard = () => {
     if (!match) return null;
     const team = match.teams[teamIndex];
     const isWinner = match.winner === team.teamId;
-    const teamName = teamDetails[team.teamId]?.username || `Equipo ${teamIndex + 1}`;
+    let teamName
+    
+    if(team.teamId === userLogged){
+      teamName = 'Nosotros'
+    } else {
+      teamName = 'Ellos'
+    }
 
     return (
       <Paper 
@@ -206,6 +226,7 @@ const Scoreboard = () => {
       </Box>
     );
   }
+
 
   return (
     <Box>

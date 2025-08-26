@@ -23,7 +23,9 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  PeopleAltOutlined,
+  PeopleOutline
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
@@ -48,13 +50,18 @@ interface GuestPlayer {
 
 type Player = RegisteredPlayer | GuestPlayer;
 
+interface Team {
+  players: Player[];
+  name?: string;
+}
+
 interface IMatch {
-  tournament?: string; // Torneo al que pertenece
+  tournament?: string;
   teams: {
     teamId: string;
     score: number;
-  }[]; // Equipos y sus puntajes
-  winner?: string; // Equipo ganador
+  }[]; 
+  winner?: string; 
   status: "in_progress" | "finished";
   createdAt: Date;
 }
@@ -63,7 +70,27 @@ const CreateMatch = () => {
   const navigate = useNavigate();
   const [matchType, setMatchType] = useState('pairs');
   const [users, setUsers] = useState<User[]>([]);
+
+  const fetchUserData = async () => {
+    try {
+      const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
+      setSelectedPlayers(prev => {
+        const alreadyExists = prev.some(player => player._id === data.user._id)
+        if (alreadyExists) {return prev}
+        const currentUserPlayer: Player = {
+          _id: data.user._id,  
+          username: data.user.username,
+          isRegistered: true
+      }
+      return [currentUserPlayer, ...prev];    
+  })
+    } catch (err) {
+      setError('Error al cargar los datos del usuario');
+    }
+  };
+
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [tabValue, setTabValue] = useState(0);
@@ -71,6 +98,7 @@ const CreateMatch = () => {
 
   useEffect(() => {
     fetchUsers();
+    fetchUserData()
   }, []);
 
   const fetchUsers = async () => {
@@ -116,7 +144,7 @@ const CreateMatch = () => {
     const selectedIds = Array.isArray(event.target.value) ? event.target.value : [event.target.value];
     console.log('IDs seleccionados:', selectedIds);
 
-    if (selectedIds.length > getMaxPlayers() - 1) {
+    if (selectedIds.length > getMaxPlayers()) {
       setError('Has excedido el número máximo de jugadores permitidos');
       return;
     }
@@ -141,14 +169,16 @@ const CreateMatch = () => {
   };
 
   const getMaxPlayers = () => {
-    return matchType === 'pairs' ? 3 : 5; 
+    return matchType === 'pairs' ? 4 : 6; 
   };
 
   const handleCreateMatch = async () => {
-    if (selectedPlayers.length < getMaxPlayers() - 1) {
+    if (selectedPlayers.length < getMaxPlayers()) {
       setError('Selecciona la cantidad correcta de jugadores');
       return;
     }
+    
+    const teams = dividePlayersIntoTeams(selectedPlayers, matchType);
 
     setLoading(true);
     try {
@@ -156,16 +186,16 @@ const CreateMatch = () => {
         method: 'POST',
         body: JSON.stringify({
           type: 'friendly',
-          teams: [
-            {
-              teamId: selectedPlayers[0]._id,
-              score: 0
-            },
-            ...selectedPlayers.slice(1).map(player => ({
-              teamId: player._id,
-              score: 0
-            }))
-          ],
+          matchType: matchType,
+          teams: teams.map((team, index) => ({
+            teamId: team.players[0]?._id,
+            players: team.players.map(player => ({
+              playerId: player._id,
+              username: player.username,
+              isGuest: 'isGuest' in player
+            })),
+            score: 0
+          })),
           status: "in_progress"
         })
       });
@@ -178,12 +208,40 @@ const CreateMatch = () => {
     }
   };
 
+  const dividePlayersIntoTeams = (players: Player[], matchType: string): Team[] => {
+    const playersPerTeam = matchType === 'pairs' ? 2 : 3;
+    const teams: Team[] = [];
+    
+    for (let i = 0; i < players.length; i += playersPerTeam) {
+      const teamPlayers = players.slice(i, i + playersPerTeam);
+      teams.push({
+        players: teamPlayers,
+        name: `Equipo ${teams.length + 1}`
+      });
+    }
+    
+    return teams;
+  };
+
   return (
     <Box>
       <NavBar />
       <Container maxWidth="sm" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" gutterBottom align="center">
+        <Paper 
+          elevation={6}
+          sx={{ 
+            p: 4, 
+            bgcolor: "background.paper", 
+            border: "1px solid #FFD700", 
+            borderRadius: 3,
+            boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
+          }}
+        >
+          <Typography 
+            variant="h5" 
+            align="center" 
+            sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
+          >
             Crear Nuevo Partido
           </Typography>
 
@@ -202,34 +260,93 @@ const CreateMatch = () => {
               </Select>
             </FormControl>
           </Box>
-
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Jugadores Seleccionados ({selectedPlayers.length}/{getMaxPlayers() - 1})
+              {matchType === 'pairs' ? 'Parejas' : 'Tríos'} - 
+              Equipos Formados ({selectedPlayers.length}/{getMaxPlayers()})
             </Typography>
-            <List>
-              {selectedPlayers.map((player) => (
-                <ListItem key={player._id}>
-                  <ListItemText 
-                    primary={player.username}
-                    secondary={'isGuest' in player ? 'Invitado' : 'Registrado'}
-                  />
-                  <ListItemSecondaryAction>
-                    <IconButton 
-                      edge="end" 
-                      aria-label="delete"
-                      onClick={() => handleRemovePlayer(player._id)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
+            
+            {dividePlayersIntoTeams(selectedPlayers, matchType).map((team, index) => (
+              <Paper key={index} sx={{ p: 2, mb: 2, }}>
+                <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
+                  {team.name}
+                </Typography>
+                <List dense>
+                  {team.players.map((player) => (
+                    <ListItem key={player._id}>
+                      <ListItemText 
+                        primary={player.username}
+                        secondary={'isGuest' in player ? 'Invitado' : 'Registrado'}
+                      />
+                      <ListItemSecondaryAction>
+                        <IconButton 
+                          edge="end" 
+                          aria-label="delete"
+                          color='secondary'
+                          onClick={() => handleRemovePlayer(player._id)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            ))}
           </Box>
 
-          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-            <Tabs value={tabValue} onChange={handleTabChange}>
+          <Box sx={{ display: { xs: 'flex', sm: 'none' }, gap: 1, mb: 2 }}>
+            <Button
+              variant={tabValue === 0 ? "contained" : "outlined"}
+              onClick={() => setTabValue(0)}
+              size="small"
+              startIcon={<PeopleOutline sx={{ fontSize: 16 }} />}
+              sx={{
+                flex: 1, 
+                maxWidth: '50%', 
+                bgcolor: tabValue === 0 ? "#FFD700" : "transparent",
+                color: tabValue === 0 ? "#000" : "#CED4DA",
+                borderColor: "#FFD700",
+                "&:hover": {
+                  bgcolor: tabValue === 0 ? "#FFC400" : "rgba(255, 215, 0, 0.1)"
+                }
+              }}
+            >
+              Registrados
+            </Button>
+            <Button
+              variant={tabValue === 1 ? "contained" : "outlined"}
+              onClick={() => setTabValue(1)}
+              size="small"
+              startIcon={<PeopleAltOutlined sx={{ fontSize: 16 }} />}
+              sx={{
+                flex: 1, 
+                maxWidth: '50%', 
+                bgcolor: tabValue === 1 ? "#FFD700" : "transparent",
+                color: tabValue === 1 ? "#000" : "#CED4DA",
+                borderColor: "#FFD700",
+                "&:hover": {
+                  bgcolor: tabValue === 1 ? "#FFC400" : "rgba(255, 215, 0, 0.1)"
+                }
+              }}
+            >
+              Invitado
+            </Button>
+          </Box>
+
+          <Box sx={{ display: { xs: 'none', sm: 'block' }, borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              textColor="inherit"
+              indicatorColor="secondary"
+              sx={{
+                "& .MuiTab-root": {
+                  color: "#CED4DA",
+                  "&.Mui-selected": { color: "#FFD700" }
+                }
+              }}
+            > 
               <Tab label="Usuarios Registrados" />
               <Tab label="Agregar Invitado" />
             </Tabs>
@@ -271,7 +388,7 @@ const CreateMatch = () => {
                       key={user._id}
                       value={user._id}
                       disabled={
-                        selectedPlayers.length >= getMaxPlayers() - 1 &&
+                        selectedPlayers.length >= getMaxPlayers() &&
                         !selectedPlayers.some(p => p._id === user._id)
                       }
                     >
@@ -288,12 +405,19 @@ const CreateMatch = () => {
                   label="Nombre del Invitado"
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
-                  disabled={selectedPlayers.length >= getMaxPlayers() - 1}
+                  disabled={selectedPlayers.length >= getMaxPlayers()}
                 />
                 <Button
                   variant="contained"
                   onClick={handleAddGuest}
-                  disabled={selectedPlayers.length >= getMaxPlayers() - 1}
+                  sx={{
+                    fontWeight: "bold",
+                    borderRadius: 2,
+                    "&:hover": {
+                      bgcolor: "#8B1A1A"
+                    }
+                  }}
+                  disabled={selectedPlayers.length >= getMaxPlayers()}
                 >
                   <AddIcon />
                 </Button>
@@ -306,7 +430,7 @@ const CreateMatch = () => {
             variant="contained"
             size="large"
             onClick={handleCreateMatch}
-            disabled={loading || selectedPlayers.length < getMaxPlayers() - 1}
+            disabled={loading || selectedPlayers.length < getMaxPlayers()}
           >
             {loading ? 'Creando...' : 'Crear Partido'}
           </Button>

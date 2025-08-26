@@ -4,7 +4,7 @@ import Tournament from "../models/Tournament";
 import { FRIENDLY_MATCHES_ID, MATCH_TYPES, MATCH_STATUS } from "../config/constants";
 
 interface AuthRequest extends Request {
-    user?: string; // Agregamos la propiedad 'user'
+    user?: string;
   }
 
 export const createMatch = async (req: AuthRequest, res: Response) => {
@@ -143,10 +143,10 @@ export const getMatchById = async (req: Request, res: Response) => {
       return 
     }
 
-    if (match.type === MATCH_TYPES.TOURNAMENT) {
-      await match.populate("tournament");
-    }
-    await match.populate("teams.teamId");
+    // if (match.type === MATCH_TYPES.TOURNAMENT) {
+    //   await match.populate("tournament");
+    // }
+    // await match.populate("teams.teamId");
 
     res.status(200).json(match);
   } catch (error: any) {

@@ -47,23 +47,28 @@ const Login = () => {
     <Container component="main" maxWidth="xs">
       <Box
         sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
+          minHeight: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          bgcolor: "background.default",
         }}
       >
         <Paper
-          elevation={3}
+          elevation={6}
           sx={{
-            padding: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
+            p: 4, 
+            bgcolor: "background.paper", 
+            border: "1px solid #FFD700", 
+            borderRadius: 3,
+            boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
           }}
         >
-          <Typography component="h1" variant="h5">
+          <Typography
+            variant="h5" 
+            align="center" 
+            sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
+          >
             Iniciar Sesión
           </Typography>
           
@@ -85,6 +90,8 @@ const Login = () => {
               autoFocus
               value={formData.email}
               onChange={handleChange}
+              variant="outlined"
+              InputProps={{ sx: { borderRadius: 3 } }}
             />
             <TextField
               margin="normal"
@@ -97,17 +104,29 @@ const Login = () => {
               autoComplete="current-password"
               value={formData.password}
               onChange={handleChange}
+              variant="outlined"
+              InputProps={{ sx: { borderRadius: 3 } }}
             />
-            <Button
+           <Button
               type="submit"
               fullWidth
               variant="contained"
-              sx={{ mt: 3, mb: 2 }}
+              color='secondary'
+              sx={{
+                mt: 3,
+                mb: 2,
+                py: 1.2,
+                borderRadius: 3
+              }}
             >
               Iniciar Sesión
             </Button>
-            <Box sx={{ textAlign: 'center' }}>
-              <Link href="/register" variant="body2">
+            <Box sx={{ textAlign: "center", mt: 2 }}>
+              <Link
+                href="/register"
+                variant="body2"
+                sx={{ color: "secondary.main", fontWeight: 500 }}
+              >
                 ¿No tienes una cuenta? Regístrate
               </Link>
             </Box>

@@ -73,16 +73,20 @@ const Register = () => {
         }}
       >
         <Paper
-          elevation={3}
-          sx={{
-            padding: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
+          elevation={6}
+          sx={{ 
+            p: 4, 
+            bgcolor: "background.paper", 
+            border: "1px solid #FFD700", 
+            borderRadius: 3,
+            boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
           }}
         >
-          <Typography component="h1" variant="h5">
+          <Typography 
+            variant="h5" 
+            align="center" 
+            sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
+          >
             Registro
           </Typography>
           
@@ -144,12 +148,17 @@ const Register = () => {
               type="submit"
               fullWidth
               variant="contained"
+              color='secondary'
               sx={{ mt: 3, mb: 2 }}
             >
               Registrarse
             </Button>
             <Box sx={{ textAlign: 'center' }}>
-              <Link href="/login" variant="body2">
+            <Link
+              href="/login"
+              variant="body2"
+              sx={{ color: "secondary.main", fontWeight: 500 }}
+            >
                 ¿Ya tienes una cuenta? Inicia sesión
               </Link>
             </Box>
