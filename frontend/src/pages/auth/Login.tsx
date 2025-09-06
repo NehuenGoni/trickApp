@@ -19,8 +19,10 @@ const Login = () => {
     password: ''
   });
   const [error, setError] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if(submitError){setSubmitError('')}
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -29,6 +31,10 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.email || !formData.password) {
+      setSubmitError("Por favor completa todos los campos");
+      return;
+    }
     try {
       const data = await apiRequest(API_ROUTES.AUTH.LOGIN, {
         method: 'POST',
@@ -77,6 +83,11 @@ const Login = () => {
               {error}
             </Alert>
           )}
+          {submitError && (
+            <Alert severity="error" sx={{ mt: 2, width: '100%' }}>
+              {submitError}
+            </Alert>
+          )}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
             <TextField
@@ -103,7 +114,10 @@ const Login = () => {
               id="password"
               autoComplete="current-password"
               value={formData.password}
-              onChange={handleChange}
+              onChange={(e) => {
+                if (submitError) setSubmitError('');
+                handleChange(e);
+              }}
               variant="outlined"
               InputProps={{ sx: { borderRadius: 3 } }}
             />
@@ -119,7 +133,7 @@ const Login = () => {
                 borderRadius: 3
               }}
             >
-              Iniciar Sesión
+              Login
             </Button>
             <Box sx={{ textAlign: "center", mt: 2 }}>
               <Link

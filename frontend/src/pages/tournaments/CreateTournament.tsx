@@ -57,7 +57,6 @@ interface TeamResponse {
   };
 }
 
-// Agregar función para verificar si el error es de autenticación
 const isAuthError = (error: any) => {
   return error.response?.status === 401 || 
          error.response?.status === 403 || 
@@ -134,7 +133,6 @@ const CreateTournament = () => {
   };
 
   useEffect(() => {
-    // Cargar usuarios cuando se llega al paso de crear equipos
     if (activeStep === 1) {
       loadAllUsers();
     }
@@ -166,7 +164,6 @@ const CreateTournament = () => {
   };
 
   const generateQuarterFinals = (teams: any[], tournamentId: string) => {
-    // Crear una copia del array de equipos y mezclarlo aleatoriamente
     const shuffledTeams = [...teams].sort(() => Math.random() - 0.5);
     const matches = [];
     
@@ -179,7 +176,6 @@ const CreateTournament = () => {
         team2: { id: team2.teamId, name: team2.name }
       });
 
-      // Verificar que los IDs existan
       if (!team1.teamId || !team2.teamId) {
         console.error('Equipos sin ID:', { team1, team2 });
         throw new Error('Los equipos no tienen ID asignado');
