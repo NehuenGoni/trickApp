@@ -9,7 +9,7 @@ const API_ROUTES = {
   USERS: {
     LIST: `${API_BASE_URL}/users`,
     DETAIL: (id: string) => `${API_BASE_URL}/users/${id}`,
-    STATS: `${API_BASE_URL}/users/stats`,
+    STATS:  (id: any) => `${API_BASE_URL}/users/${id}/stats`,
     SEARCH: (query: string) => `${API_BASE_URL}/users/search?query=${query}`
   },
   MATCHES: {

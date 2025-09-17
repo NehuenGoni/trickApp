@@ -20,10 +20,12 @@ export const createMatch = async (req: AuthRequest, res: Response) => {
     }
 
     const isValidTeam = teams.every(team => 
-      team && 
-      typeof team === 'object' && 
-      'teamId' in team && 
-      'score' in team
+      team &&
+      typeof team === "object" &&
+      "teamId" in team &&
+      "score" in team &&
+      Array.isArray(team.players) &&
+      team.players.every((p: any) => "playerId" in p && "username" in p)
     );
 
     if (!isValidTeam) {

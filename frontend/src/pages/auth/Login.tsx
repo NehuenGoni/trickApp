@@ -42,6 +42,7 @@ const Login = () => {
       });
 
       localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.userId);
       
       navigate('/dashboard');
     } catch (err) {

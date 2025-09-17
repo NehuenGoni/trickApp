@@ -22,9 +22,16 @@ const MatchSchema = new Schema<IMatch>(
     },
     teams: [
       {
-        teamId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        teamId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         score: { type: Number, default: 0 },
-      },
+        players: [
+          {
+            playerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            username: { type: String, required: true },
+            isGuest: { type: Boolean, default: false }
+          }
+        ]
+      }
     ],
     winner: { type: Schema.Types.ObjectId, ref: "User", required: false},
     status: { 

@@ -133,7 +133,7 @@ const Scoreboard = () => {
 
   const handleExit = async () => {
     console.log(match?.tournament )
-    if (match && match?.tournament === 'friendly_matches') { 
+    if (match && match?.tournament === 'friendly_matches' && match.status === 'in_progress') { 
       await handleDeleteAndExit();
     }
     navigate('/dashboard');
