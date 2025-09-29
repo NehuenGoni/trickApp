@@ -10,15 +10,16 @@ interface IMatch extends Document {
   winner?: mongoose.Types.ObjectId; 
   status: "in_progress" | "finished"; 
   type: "friendly" | "tournament";
+  phase?: "group" | "quarter" | "semi" | "final";
   createdAt: Date;
 }
 
 const MatchSchema = new Schema<IMatch>(
   {
-    tournament: { 
-      type: Schema.Types.Mixed, 
-      required: true,
-      refPath: 'type'
+    tournament: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Tournament",   
+      required: false
     },
     teams: [
       {
@@ -27,7 +28,7 @@ const MatchSchema = new Schema<IMatch>(
         players: [
           {
             playerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-            username: { type: String, required: true },
+            username: { type: String, required: false },
             isGuest: { type: Boolean, default: false }
           }
         ]
@@ -43,6 +44,11 @@ const MatchSchema = new Schema<IMatch>(
       type: String,
       enum: Object.values(MATCH_TYPES),
       default: MATCH_TYPES.FRIENDLY
+    },
+    phase: { 
+      type: String, 
+      enum: ["group", "quarter-finals", "semi-finals", "final"], 
+      required: false 
     },
     createdAt: { type: Date, default: Date.now },
   },

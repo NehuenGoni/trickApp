@@ -4,7 +4,7 @@ import mongoose from "mongoose"
 import TournamentModel from "../models/Tournament";
 
 interface AuthRequest extends Request {
-    user?: string; // Agregamos la propiedad 'user'
+    user?: string;
   }
   
 export const createTournament = async (req: AuthRequest, res: Response) => {
@@ -117,30 +117,23 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
       const { tournamentId } = req.params;
       const { name, members } = req.body;
   
-      // Verificar si el torneo existe
+      // verify tournament exists
       const tournament = await TournamentModel.findById(tournamentId);
       if (!tournament) {
         res.status(404).json({ message: "Torneo no encontrado" });
         return 
       }
   
-      // Crear el equipo
+      // Create new team
       const newTeam = {
         teamId: new mongoose.Types.ObjectId(),
-        name: name,
-        players: members.map((member: any) => {
-          if ('isGuest' in member) {
-            return {
-              name: member.name,
-              isGuest: true
-            };
-          } else {
-            return {
-              playerId: member.playerId,
-              name: member.name
-            };
-          }
-        })
+        name,
+        players: members.map((member: any) => ({
+          _id: new mongoose.Types.ObjectId(),
+          playerId: member.playerId,           
+          name: member.name,
+          isGuest: member.isGuest ?? false
+        }))
       };
   
       tournament.teams.push(newTeam);
@@ -152,7 +145,7 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
     }
   };
   
-  // Modificar un equipo dentro de un torneo
+
   export const updateTeam = async (req: Request, res: Response) => {
     try {
       const { tournamentId, teamId } = req.params;
@@ -179,7 +172,7 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
     }
   };
   
-  // Eliminar un equipo de un torneo
+
   export const removeTeam = async (req: Request, res: Response) => {
     try {
       const { tournamentId, teamId } = req.params;

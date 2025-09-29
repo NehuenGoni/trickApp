@@ -186,14 +186,23 @@ const CreateTournament = () => {
         teams: [
           {
             teamId: team1.teamId,
-            score: 0
+            score: 0,
+            players: team1.players.map((member : any) => ({
+              playerId: member.playerId,
+              username: member.username
+            }))
           },
           {
             teamId: team2.teamId,
-            score: 0
+            score: 0,
+            players: team2.players.map((member : any) => ({
+              playerId: member.playerId,
+              username: member.username
+            }))
           }
         ],
         type: 'tournament',
+        phase: 'quarter-finals',
         status: 'scheduled'
       });
     }
@@ -208,8 +217,6 @@ const CreateTournament = () => {
     }
 
     try {
-      // Crear el torneo
-      console.log('test')
       const tournamentResponse = await apiRequest(API_ROUTES.TOURNAMENTS.CREATE, {
         method: 'POST',
         body: JSON.stringify({
@@ -270,7 +277,6 @@ const CreateTournament = () => {
       
       try {
         for (const match of quarterFinals) {
-          // Verificar que los teamId existan
           if (!match.teams[0].teamId || !match.teams[1].teamId) {
             console.error('Estructura del partido:', match);
             throw new Error('Faltan teamId en la estructura del partido');
@@ -280,6 +286,7 @@ const CreateTournament = () => {
             tournament: tournamentId,
             teams: match.teams,
             type: 'tournament',
+            phase: 'quarter-finals',
             status: 'scheduled'
           };
           

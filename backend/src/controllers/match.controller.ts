@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import Match from "../models/Match";
 import Tournament from "../models/Tournament";
-import { FRIENDLY_MATCHES_ID, MATCH_TYPES, MATCH_STATUS } from "../config/constants";
+import { MATCH_TYPES, MATCH_STATUS } from "../config/constants";
+import mongoose from "mongoose";
 
 interface AuthRequest extends Request {
     user?: string;
@@ -9,7 +10,7 @@ interface AuthRequest extends Request {
 
 export const createMatch = async (req: AuthRequest, res: Response) => {
   try {
-    const { tournament, teams, type = MATCH_TYPES.FRIENDLY } = req.body;
+    const { tournament, teams, type, phase } = req.body;
 
     if (!Array.isArray(teams)) {
       res.status(400).json({ 
@@ -25,7 +26,7 @@ export const createMatch = async (req: AuthRequest, res: Response) => {
       "teamId" in team &&
       "score" in team &&
       Array.isArray(team.players) &&
-      team.players.every((p: any) => "playerId" in p && "username" in p)
+      team.players.every((p: any) => "playerId" in p)
     );
 
     if (!isValidTeam) {
@@ -60,15 +61,27 @@ export const createMatch = async (req: AuthRequest, res: Response) => {
         return 
       }
 
-      matchData.tournament = tournament;
-    } else {
-      matchData.tournament = FRIENDLY_MATCHES_ID;
-    }
+      matchData.type = MATCH_TYPES.TOURNAMENT;
 
-    const match = new Match(matchData);
-    await match.save();
-    
-    res.status(201).json(match);
+      if (phase) {
+        matchData.phase = phase; // 👈 opcional
+      }
+
+      const match = new Match(matchData);
+      await match.save();
+      
+      tournamentData.matches.push(match._id as mongoose.Types.ObjectId);
+      await tournamentData.save();
+
+      res.status(201).json(match);
+    } else {
+      matchData.type = MATCH_TYPES.FRIENDLY;
+
+      const match = new Match(matchData);
+      await match.save();
+
+      res.status(201).json(match);
+    }
   } catch (error: any) {
     res.status(400).json({ 
       message: "Error al crear el partido", 
@@ -145,11 +158,6 @@ export const getMatchById = async (req: Request, res: Response) => {
       return 
     }
 
-    // if (match.type === MATCH_TYPES.TOURNAMENT) {
-    //   await match.populate("tournament");
-    // }
-    // await match.populate("teams.teamId");
-
     res.status(200).json(match);
   } catch (error: any) {
     res.status(400).json({ 
@@ -210,12 +218,21 @@ export const getMatchesByTournament = async (req: Request, res: Response) => {
     const { tournamentId } = req.params;
     
     const matches = await Match.find({ tournament: tournamentId })
-      .populate('team1.teamId')
-      .populate('team2.teamId');
+      .populate("teams.teamId", "name")             
+      .populate("teams.players.playerId");
 
-    res.json(matches);
+          const formattedMatches = matches.map((match) => ({
+      _id: match._id,
+      type: match.type,
+      status: match.status,
+      tournament: match.tournament,
+      teams: match.teams,
+      ...(match.type === "tournament" && match.phase ? { phase: match.phase } : {}),
+    }));
+
+    res.json(formattedMatches);
   } catch (error) {
     console.error('Error al obtener partidos del torneo:', error);
     res.status(500).json({ message: 'Error al obtener los partidos del torneo' });
   }
-};
+};  

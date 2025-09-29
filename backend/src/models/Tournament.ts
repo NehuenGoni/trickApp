@@ -16,6 +16,7 @@ export interface ITournament extends Document {
   name: string;
   createdBy: mongoose.Types.ObjectId; 
   teams: ITeam[];
+  matches: mongoose.Types.ObjectId[];
   numberOfTeams: number; 
   createdAt: Date;
   startDate: Date;
@@ -27,7 +28,7 @@ const PlayerSchema = new Schema<IPlayer>({
   playerId: { type: Schema.Types.ObjectId, ref: "User", required: function() {
     return !this.isGuest;
   }},
-  name: { type: String, required: true },
+  name: { type: String, required: false },
   isGuest: { type: Boolean, default: false }
 });
 
@@ -44,6 +45,7 @@ const tournamentSchema = new Schema<ITournament>(
     teams: { type: [TeamSchema], required: true },
     startDate: { type: Date, required: true },
     description: { type: String },
+    matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],
     status: { 
       type: String, 
       enum: ['upcoming', 'in_progress', 'completed'],

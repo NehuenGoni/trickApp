@@ -78,19 +78,19 @@ const Scoreboard = () => {
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setUserLogged(data.user._id)
 
-      const teamIds = matchData.teams.map((team: { teamId: string }) => team.teamId).filter(Boolean);
-      const teamsData: {[key: string]: { username: string }} = {};
+      // const teamIds = matchData.teams.map((team: { teamId: string }) => team.teamId).filter(Boolean);
+      // const teamsData: {[key: string]: { username: string }} = {};
       
-      for (const teamId of teamIds) {
-        try {
-          const teamData = await apiRequest(API_ROUTES.USERS.DETAIL(teamId));
-          teamsData[teamId] = teamData;
-        } catch (err) {
-          console.error(`Error al obtener detalles del equipo ${teamId}:`, err);
-        }
-      }
+      // for (const teamId of teamIds) {
+      //   try {
+      //     const teamData = await apiRequest(API_ROUTES.USERS.DETAIL(teamId));
+      //     teamsData[teamId] = teamData;
+      //   } catch (err) {
+      //     console.error(`Error al obtener detalles del equipo ${teamId}:`, err);
+      //   }
+      // }
       
-      setTeamDetails(teamsData);
+      // setTeamDetails(teamsData);
     } catch (err) {
       console.error('Error al cargar el partido:', err);
       setError('Error al cargar el partido');

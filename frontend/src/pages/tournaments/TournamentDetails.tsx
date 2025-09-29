@@ -9,22 +9,18 @@ import {
   Alert,
   Divider,
   Grid,
-  Chip
+  Chip,
 } from '@mui/material';
+import IconButton from '@mui/material/IconButton';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 
 interface Match {
   _id: string;
   tournamentId: string;
-  team1: {
-    teamId: string;
-    score: number;
-  };
-  team2: {
-    teamId: string;
-    score: number;
-  };
+  teams: any[];
   phase: string;
   status: string;
 }
@@ -49,47 +45,15 @@ interface Tournament {
 }
 
 const TournamentDetails = () => {
+  const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [matchesIds, setMatchesIds] = useState<string[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const fetchTournamentData = async () => {
-      try {
-        // Obtener datos del torneo
-        const tournamentData = await apiRequest(API_ROUTES.TOURNAMENTS.GET(id!));
-        setTournament(tournamentData);
-
-        // Obtener partidos del torneo
-        const matchesData = await apiRequest(API_ROUTES.MATCHES.GET_BY_TOURNAMENT(id!));
-        setMatches(matchesData);
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Error al cargar los datos del torneo');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (id) {
-      fetchTournamentData();
-    }
-  }, [id]);
-
-  const getTeamName = (teamId: string) => {
-    return tournament?.teams.find(team => team.teamId === teamId)?.name || 'Equipo desconocido';
-  };
-
-  const getPhaseName = (phase: string) => {
-    const phases: { [key: string]: string } = {
-      'quarter-finals': 'Cuartos de Final',
-      'semi-finals': 'Semifinales',
-      'final': 'Final',
-      'third-place': 'Tercer y Cuarto Puesto'
-    };
-    return phases[phase] || phase;
-  };
+  const currentUserId = localStorage.getItem('userId') || '';
 
   const getStatusColor = (status: string) => {
     const colors: { [key: string]: "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" } = {
@@ -109,6 +73,51 @@ const TournamentDetails = () => {
       'cancelled': 'Cancelado'
     };
     return statuses[status] || status;
+  };
+
+  useEffect(() => {
+    fetchTournamentData()
+  }, [id]);
+
+  useEffect(() => {
+    fetchMatches(matchesIds);
+  }, [matchesIds]);
+
+  const fetchTournamentData = async () => {
+    try {
+      const tournamentData = await apiRequest(API_ROUTES.TOURNAMENTS.GET(id!));
+      setTournament(tournamentData);
+      setMatchesIds(tournamentData.matches);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Error al cargar los datos del torneo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMatches = async (ids: string[]) => {
+    try {
+      setLoading(true);
+      const responses = await Promise.all(
+        ids.map((id) => apiRequest(API_ROUTES.MATCHES.GET(id)))
+      );
+      const matchesData = responses.map((res) => res);
+      setMatches(matchesData);
+    } catch (error) {
+      console.error("Error fetching matches:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isUserInMatch = (match: any, userId: string) => {
+    return match.teams.some((team: any) =>
+      team.players.some((p: any) => p.playerId === userId)
+    );
+  };
+
+  const handlePlay = (matchId: string) => {
+    navigate(`/matches/scoreboard/${matchId}`);
   };
 
   if (loading) {
@@ -174,34 +183,56 @@ const TournamentDetails = () => {
           </Typography>
 
           <Grid container spacing={3}>
-            {matches.map((match) => (
-              <Grid item xs={12} key={match._id}>
-                <Paper sx={{ p: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle1">
-                      {getPhaseName(match.phase)}
-                    </Typography>
-                    <Chip 
-                      label={getStatusText(match.status)}
-                      color={getStatusColor(match.status)}
-                      size="small"
-                    />
-                  </Box>
-                  
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6">
-                      {getTeamName(match.team1.teamId)}
-                    </Typography>
-                    <Typography variant="h6" sx={{ mx: 2 }}>
-                      {match.status === 'completed' ? `${match.team1.score} - ${match.team2.score}` : 'vs'}
-                    </Typography>
-                    <Typography variant="h6">
-                      {getTeamName(match.team2.teamId)}
-                    </Typography>
-                  </Box>
-                </Paper>
-              </Grid>
-            ))}
+            {matches.map((match) => {
+              const userInMatch = isUserInMatch(match, currentUserId);
+
+              return (
+                <Grid item xs={12} key={match._id}>
+                  <Paper sx={{ p: 2 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        mb: 1,
+                      }}
+                    >
+                      <Chip
+                        label={match.status === "in_progress" ? "En progreso" : "Finalizado"}
+                        color={match.status === "in_progress" ? "warning" : "success"}
+                        size="small"
+                      />
+                    </Box>
+
+                    {/* Equipos y score */}
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <Typography variant="h6">
+                        Equipo 1 (score: {match.teams[0]?.score ?? 0})
+                      </Typography>
+
+                      <Typography variant="h6" sx={{ mx: 2 }}>
+                        {match.status === "finished"
+                          ? `${match.teams[0]?.score} - ${match.teams[1]?.score}`
+                          : "vs"}
+                      </Typography>
+
+                      <Typography variant="h6">
+                        Equipo 2 (score: {match.teams[1]?.score ?? 0})
+                      </Typography>
+                    </Box>
+
+                    {/* Botón de jugar solo si el user participa */}
+                    {userInMatch && (
+                      <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                        <IconButton color="primary" onClick={() => handlePlay(match._id)}>
+                          <PlayArrowIcon />
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Paper>
+                </Grid>
+              );
+            })}
           </Grid>
         </Paper>
       </Container>
