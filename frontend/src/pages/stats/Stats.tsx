@@ -5,12 +5,11 @@ import API_ROUTES, { apiRequest } from "../../config/api";
 
 const Stats = () => {
   const [matchStats, setMatchStats] = useState<any>(null);
-  const [tournamentStats, setTournamentStats] = useState<any>(null);
-  const [stats, setStats] = useState<any>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showMatches, setShowMatches] = useState(false);
-  const [showTournaments, setShowTournaments] = useState(false);
+  //const [showTournaments, setShowTournaments] = useState(false);
+
 
   useEffect(() => {
     const fetchUserStats = async () => {
@@ -52,7 +51,7 @@ const Stats = () => {
               <Paper sx={{ p: 2, textAlign: "center" }}>
                 <Typography variant="h6">Torneos Jugados</Typography>
                 <Typography variant="h4">{matchStats?.wins ?? 0}</Typography>
-                <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setShowTournaments(true)}>Ver Torneos</Button>
+                {/* <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setShowTournaments(true)}>Ver Torneos</Button> */}
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={4}>

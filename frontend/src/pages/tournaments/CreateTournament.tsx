@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Paper,
@@ -79,7 +79,7 @@ const CreateTournament = () => {
   const [error, setError] = useState('');
   const [searchingUsers, setSearchingUsers] = useState(false);
 
-  const loadAllUsers = async () => {
+  const loadAllUsers = useCallback (async () => {
     setSearchingUsers(true);
     try {
       const data = await apiRequest(API_ROUTES.USERS.LIST);
@@ -101,7 +101,7 @@ const CreateTournament = () => {
     } finally {
       setSearchingUsers(false);
     }
-  };
+  }, [navigate]);
 
   const searchUsers = async (query: string) => {
     if (!query.trim()) {
@@ -136,7 +136,7 @@ const CreateTournament = () => {
     if (activeStep === 1) {
       loadAllUsers();
     }
-  }, [activeStep]);
+  }, [activeStep, loadAllUsers]);
 
   const steps = ['Información del Torneo', 'Crear Equipos', 'Vista Previa'];
 
@@ -215,7 +215,7 @@ const CreateTournament = () => {
       setError("Debes agregar exactamente 8 equipos");
       return;
     }
-
+    setLoading(true);
     try {
       const tournamentResponse = await apiRequest(API_ROUTES.TOURNAMENTS.CREATE, {
         method: 'POST',
@@ -320,6 +320,8 @@ const CreateTournament = () => {
         throw new Error(`Error al crear los partidos del torneo: ${matchError.response?.data?.message || matchError.message}`);
       }
 
+      setLoading(false);
+      
       navigate(`/tournaments/${tournamentId}`);
     } catch (error: any) {
       console.error('Error al crear el torneo:', error);

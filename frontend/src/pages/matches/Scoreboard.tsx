@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Paper,
@@ -7,7 +7,6 @@ import {
   Button,
   Grid,
   IconButton,
-  Divider,
   Alert,
   Dialog,
   DialogTitle,
@@ -56,11 +55,8 @@ const Scoreboard = () => {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
 
-  useEffect(() => {
-    fetchMatch();
-  }, [matchId]);
 
-  const fetchMatch = async () => {
+  const fetchMatch = useCallback ( async () => {
     if (!matchId) {
       setError('ID de partido no válido');
       return;
@@ -78,24 +74,28 @@ const Scoreboard = () => {
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setUserLogged(data.user._id)
 
-      // const teamIds = matchData.teams.map((team: { teamId: string }) => team.teamId).filter(Boolean);
-      // const teamsData: {[key: string]: { username: string }} = {};
+      const teamIds = matchData.teams.map((team: { teamId: string }) => team.teamId).filter(Boolean);
+      const teamsData: {[key: string]: { username: string }} = {};
       
-      // for (const teamId of teamIds) {
-      //   try {
-      //     const teamData = await apiRequest(API_ROUTES.USERS.DETAIL(teamId));
-      //     teamsData[teamId] = teamData;
-      //   } catch (err) {
-      //     console.error(`Error al obtener detalles del equipo ${teamId}:`, err);
-      //   }
-      // }
+      for (const teamId of teamIds) {
+        try {
+          const teamData = await apiRequest(API_ROUTES.USERS.DETAIL(teamId));
+          teamsData[teamId] = teamData;
+        } catch (err) {
+          console.error(`Error al obtener detalles del equipo ${teamId}:`, err);
+        }
+       }
       
-      // setTeamDetails(teamsData);
+       setTeamDetails(teamsData);
     } catch (err) {
       console.error('Error al cargar el partido:', err);
       setError('Error al cargar el partido');
     }
-  };
+  }, [matchId])
+
+  useEffect(() => {
+    fetchMatch();
+  }, [fetchMatch]);
 
   const handleScoreChange = async (teamIndex: number, change: number) => {
     if (!match) return;
@@ -175,8 +175,15 @@ const Scoreboard = () => {
     const team = match.teams[teamIndex];
     const isWinner = match.winner === team.teamId;
     let teamName
+    let myTeam
+
+    for(let player of team.players){
+      if(player.playerId === userLogged){
+        myTeam = true
+      }
+    }
     
-    if(team.teamId === userLogged){
+    if(myTeam){
       teamName = 'Nosotros'
     } else {
       teamName = 'Ellos'
@@ -215,6 +222,20 @@ const Scoreboard = () => {
     );
   };
 
+  const formatUsernames = () => {
+    const usernames = Object.values(teamDetails).map(t => t.username);
+
+    if (usernames.length <= 1) return usernames[0] || "";
+
+    return usernames
+      .map((name, idx) => {
+        if (idx === usernames.length - 1) return name;     
+        if (idx === usernames.length - 2) return name + " y ";
+        return name + ", ";                                   
+      })
+      .join("");
+  };
+
   if (!match) {
     return (
       <Box>
@@ -251,7 +272,7 @@ const Scoreboard = () => {
 
         {match.status === "finished" && match.winner && (
           <Alert severity="success" sx={{ mb: 2 }}>
-            ¡Partido terminado! Ganador: {teamDetails[match.winner]?.username || 'Equipo Ganador'}
+            ¡Partido terminado! Ganadores: {formatUsernames()|| 'Equipo Ganador'}
           </Alert>
         )}
 

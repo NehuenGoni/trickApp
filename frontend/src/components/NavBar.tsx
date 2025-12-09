@@ -20,6 +20,8 @@ import {
   Logout as LogoutIcon
 } from '@mui/icons-material';
 
+type AppMenuItem = MenuItemWithPath | MenuItemWithAction | MenuItemDivider;
+
 interface NavBarProps {
   showBackButton?: boolean;
 }
@@ -48,7 +50,7 @@ interface MenuItemDivider {
   action?: never;
 }
 
-type MenuItem = MenuItemWithPath | MenuItemWithAction | MenuItemDivider;
+
 
 const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const navigate = useNavigate();
@@ -76,12 +78,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const handleClose = () => {
     setAnchorEl(null);
   };
-
-  const handleNavigation = (path: string) => {
-    handleClose();
-    navigate(path);
-  };
-
+  
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
@@ -94,7 +91,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   };
 
-  const menuItems: MenuItem[] = [
+  const menuItems: AppMenuItem[] = [
     { icon: <DashboardIcon fontSize="small" />, label: 'Dashboard', path: '/dashboard' },
     { icon: <PersonIcon fontSize="small" />, label: 'Mi Perfil', path: '/profile' },
     { icon: <StatsIcon fontSize="small" />, label: 'Mis Estadísticas', path: '/stats' },

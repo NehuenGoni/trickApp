@@ -55,16 +55,16 @@ interface Team {
   name?: string;
 }
 
-interface IMatch {
-  tournament?: string;
-  teams: {
-    teamId: string;
-    score: number;
-  }[]; 
-  winner?: string; 
-  status: "in_progress" | "finished";
-  createdAt: Date;
-}
+// interface IMatch {
+//   tournament?: string;
+//   teams: {
+//     teamId: string;
+//     score: number;
+//   }[]; 
+//   winner?: string; 
+//   status: "in_progress" | "finished";
+//   createdAt: Date;
+// }
 
 const CreateMatch = () => {
   const navigate = useNavigate();
