@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Container,
@@ -75,15 +75,7 @@ const TournamentDetails = () => {
     return statuses[status] || status;
   };
 
-  useEffect(() => {
-    fetchTournamentData()
-  }, [id]);
-
-  useEffect(() => {
-    fetchMatches(matchesIds);
-  }, [matchesIds]);
-
-  const fetchTournamentData = async () => {
+  const fetchTournamentData = useCallback ( async () => {
     try {
       const tournamentData = await apiRequest(API_ROUTES.TOURNAMENTS.GET(id!));
       setTournament(tournamentData);
@@ -93,7 +85,15 @@ const TournamentDetails = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, apiRequest]);
+
+  useEffect(() => {
+    fetchTournamentData()
+  }, [fetchTournamentData]);
+
+  useEffect(() => {
+    fetchMatches(matchesIds);
+  }, [matchesIds]);
 
   const fetchMatches = async (ids: string[]) => {
     try {
