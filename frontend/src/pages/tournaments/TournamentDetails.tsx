@@ -85,7 +85,7 @@ const TournamentDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, apiRequest]);
+  }, [id]);
 
   useEffect(() => {
     fetchTournamentData()
