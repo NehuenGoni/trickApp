@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
-const bcrypt_1 = __importDefault(require("bcrypt"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const userSchema = new mongoose_1.default.Schema({
     username: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -24,13 +24,13 @@ userSchema.pre("save", function (next) {
         const user = this;
         if (!user.isModified("password"))
             return next();
-        user.password = yield bcrypt_1.default.hash(user.password, 10);
+        user.password = yield bcryptjs_1.default.hash(user.password, 10);
         next();
     });
 });
 userSchema.methods.comparePassword = function (enteredPassword) {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield bcrypt_1.default.compare(enteredPassword, this.password);
+        return yield bcryptjs_1.default.compare(enteredPassword, this.password);
     });
 };
 const User = mongoose_1.default.model("User", userSchema);

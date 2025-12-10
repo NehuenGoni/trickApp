@@ -4,20 +4,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-// Middleware para proteger rutas con JWT
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
 const authMiddleware = (req, res, next) => {
     var _a;
     const token = (_a = req.header("Authorization")) === null || _a === void 0 ? void 0 : _a.replace("Bearer ", "");
     if (!token) {
-        return res.status(401).json({ message: "Acceso no autorizado" });
+        res.status(401).json({ message: "Acceso no autorizado" });
+        return;
     }
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
+        req.user = decoded.userId;
         next();
     }
     catch (err) {
         res.status(400).json({ message: "Token inválido" });
+        return;
     }
 };
 exports.default = authMiddleware;
