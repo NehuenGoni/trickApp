@@ -50,13 +50,19 @@ const Register = () => {
         })
       });
 
-      const data = await response.json();
+      setError(response.message || 'Registro exitoso. Redirigiendo al login...');
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Error en el registro');
-      }
+      setFormData({
+        username: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+      });
 
-      navigate('/login');
+      setTimeout(() => { 
+        navigate('/login');
+      }, 2000);
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en el registro');
     }
