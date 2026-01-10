@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
+  CircularProgress,
   Paper,
   Typography,
   Box,
@@ -27,6 +28,7 @@ import {
   PeopleAltOutlined,
   PeopleOutline
 } from '@mui/icons-material';
+import { Types } from 'mongoose';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
@@ -43,9 +45,9 @@ interface RegisteredPlayer {
 }
 
 interface GuestPlayer {
-  _id: string;
+  guestId: string;
   username: string;
-  isGuest: true;
+  isRegistered: false;
 }
 
 type Player = RegisteredPlayer | GuestPlayer;
@@ -75,7 +77,7 @@ const CreateMatch = () => {
     try {
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setSelectedPlayers(prev => {
-        const alreadyExists = prev.some(player => player._id === data.user._id)
+        const alreadyExists = prev.some(player => player.isRegistered && player._id === data.user._id)
         if (alreadyExists) {return prev}
         const currentUserPlayer: Player = {
           _id: data.user._id,  
@@ -126,9 +128,9 @@ const CreateMatch = () => {
     }
 
     const newGuest: GuestPlayer = {
-      _id: `guest-${Date.now()}`,
+      guestId: `guest-${Date.now()}`,
       username: guestName.trim(),
-      isGuest: true
+      isRegistered: false
     };
 
     setSelectedPlayers([...selectedPlayers, newGuest]);
@@ -137,12 +139,12 @@ const CreateMatch = () => {
   };
 
   const handleRemovePlayer = (playerId: string) => {
-    setSelectedPlayers(selectedPlayers.filter(player => player._id !== playerId));
+    setSelectedPlayers(selectedPlayers.filter(player => player.isRegistered && player._id !== playerId));
   };
 
   const handleRegisteredPlayerSelection = (event: SelectChangeEvent<string[]>) => {
     const selectedIds = Array.isArray(event.target.value) ? event.target.value : [event.target.value];
-    console.log('IDs seleccionados:', selectedIds);
+    //console.log('IDs seleccionados:', selectedIds);
 
     if (selectedIds.length > getMaxPlayers()) {
       setError('Has excedido el número máximo de jugadores permitidos');
@@ -156,13 +158,18 @@ const CreateMatch = () => {
         username: user.username,
         isRegistered: true
       }));
-    console.log('Jugadores seleccionados:', selectedRegisteredPlayers);
 
-    const newSelectedPlayers = [
-      ...selectedPlayers.filter(p => 'isGuest' in p),
-      ...selectedRegisteredPlayers
-    ];
-    console.log('Nuevo estado de jugadores:', newSelectedPlayers);
+    //console.log('Jugadores seleccionados:', selectedRegisteredPlayers);
+
+    const newSelectedPlayers = Array.from(
+      new Map(
+        [
+          ...selectedPlayers.filter(p => p.isRegistered ? p._id : p.guestId),
+          ...selectedRegisteredPlayers,
+        ].map(player => [player.isRegistered ? player._id : player.guestId, player])
+      ).values()
+    );
+    //console.log('Nuevo estado de jugadores:', newSelectedPlayers);
 
     setSelectedPlayers(newSelectedPlayers);
     setError('');
@@ -181,6 +188,8 @@ const CreateMatch = () => {
     const teams = dividePlayersIntoTeams(selectedPlayers, matchType);
 
     setLoading(true);
+
+    //console.log('Creando partido con equipos:', teams);
     try {
       const response = await apiRequest(API_ROUTES.MATCHES.CREATE, {
         method: 'POST',
@@ -188,17 +197,28 @@ const CreateMatch = () => {
           type: 'friendly',
           matchType: matchType,
           teams: teams.map((team, index) => ({
-            teamId: team.players[0]?._id,
-            players: team.players.map(player => ({
-              playerId: player._id,
-              username: player.username,
-              isGuest: 'isGuest' in player
-            })),
+            teamId: new Types.ObjectId(),
+            players: team.players.map((player) => {
+              if (player.isRegistered) {
+                return {
+                  playerId: player._id,
+                  isGuest: false
+                };
+              }
+
+              return {
+                guestId: player.guestId,
+                username: player.username,
+                isGuest: true
+              };
+            }),
             score: 0
           })),
           status: "in_progress"
         })
       });
+
+      //console.log('Partido creado:', response);
       
       navigate(`/matches/scoreboard/${response._id}`);
     } catch (err) {
@@ -273,7 +293,7 @@ const CreateMatch = () => {
                 </Typography>
                 <List dense>
                   {team.players.map((player) => (
-                    <ListItem key={player._id}>
+                    <ListItem key={player.isRegistered ? player._id : player.guestId}>
                       <ListItemText 
                         primary={player.username}
                         secondary={'isGuest' in player ? 'Invitado' : 'Registrado'}
@@ -283,7 +303,7 @@ const CreateMatch = () => {
                           edge="end" 
                           aria-label="delete"
                           color='secondary'
-                          onClick={() => handleRemovePlayer(player._id)}
+                          onClick={() => handleRemovePlayer(player.isRegistered ? player._id : player.guestId)}
                         >
                           <DeleteIcon />
                         </IconButton>
@@ -358,7 +378,7 @@ const CreateMatch = () => {
                 <InputLabel>Seleccionar Jugadores Registrados</InputLabel>
                 <Select
                   multiple
-                  value={selectedPlayers.filter(p => !('isGuest' in p)).map(p => p._id)}
+                  value={selectedPlayers.filter((p): p is RegisteredPlayer => p.isRegistered).map(p => p._id)}
                   onChange={handleRegisteredPlayerSelection}
                   label="Seleccionar Jugadores Registrados"
                   MenuProps={{
@@ -389,11 +409,11 @@ const CreateMatch = () => {
                       value={user._id}
                       disabled={
                         selectedPlayers.length >= getMaxPlayers() &&
-                        !selectedPlayers.some(p => p._id === user._id)
+                        !selectedPlayers.some(p => p.isRegistered && p._id === user._id)
                       }
                     >
                       {user.username}
-                      {selectedPlayers.some(p => p._id === user._id) && ' ✓'}
+                      {selectedPlayers.some(p => p.isRegistered && p._id === user._id) && ' ✓'}
                     </MenuItem>
                   ))}
                 </Select>
@@ -432,7 +452,7 @@ const CreateMatch = () => {
             onClick={handleCreateMatch}
             disabled={loading || selectedPlayers.length < getMaxPlayers()}
           >
-            {loading ? 'Creando...' : 'Crear Partido'}
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'Crear Partido'}
           </Button>
         </Paper>
       </Container>

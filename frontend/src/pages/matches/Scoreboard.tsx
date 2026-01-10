@@ -51,7 +51,7 @@ const Scoreboard = () => {
   const navigate = useNavigate();
   const [match, setMatch] = useState<Match | null>(null);
   const [error, setError] = useState('');
-  const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
+  //const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
 
@@ -63,7 +63,7 @@ const Scoreboard = () => {
     }
 
     try {
-      const matchData = await apiRequest(API_ROUTES.MATCHES.GET(matchId));
+      const matchData = await apiRequest(API_ROUTES.MATCHES.GET(matchId));  console.log(matchData)
 
       if (!matchData || !Array.isArray(matchData.teams)) {
         throw new Error('Datos del partido inválidos');
@@ -79,14 +79,13 @@ const Scoreboard = () => {
       
       for (const teamId of teamIds) {
         try {
-          const teamData = await apiRequest(API_ROUTES.USERS.DETAIL(teamId));
+          const teamData = await apiRequest(API_ROUTES.TEAMS.DETAIL(teamId));
           teamsData[teamId] = teamData;
         } catch (err) {
           console.error(`Error al obtener detalles del equipo ${teamId}:`, err);
         }
-       }
+      }
       
-       setTeamDetails(teamsData);
     } catch (err) {
       console.error('Error al cargar el partido:', err);
       setError('Error al cargar el partido');
@@ -195,7 +194,7 @@ const Scoreboard = () => {
         sx={{ 
           p: 3,
           textAlign: 'center',
-          bgcolor: isWinner ? '#e8f5e9' : 'background.paper'
+          bgcolor: isWinner ? '#D4AF37' : 'background.paper'
         }}
       >
         <Typography variant="h6" gutterBottom>
@@ -223,18 +222,21 @@ const Scoreboard = () => {
   };
 
   const formatUsernames = () => {
-    const usernames = Object.values(teamDetails).map(t => t.username);
-
-    if (usernames.length <= 1) return usernames[0] || "";
+    const usernames =
+      match?.teams
+        .find(team => team.teamId === match?.winner)
+        ?.players
+        ?.map(p => p.username) ?? [];
 
     return usernames
       .map((name, idx) => {
-        if (idx === usernames.length - 1) return name;     
+        if (idx === usernames.length - 1) return name;
         if (idx === usernames.length - 2) return name + " y ";
-        return name + ", ";                                   
+        return name + ", ";
       })
       .join("");
   };
+  
 
   if (!match) {
     return (
@@ -287,7 +289,8 @@ const Scoreboard = () => {
 
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
           <Button
-            variant="outlined"
+            variant="contained"
+            color="primary"
             onClick={handleExit}
           >
             Volver al Dashboard
