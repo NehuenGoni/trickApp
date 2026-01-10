@@ -5,6 +5,7 @@ import {
   TextField,
   Button,
   Typography,
+  CircularProgress,
   Box,
   Link,
   Alert
@@ -20,6 +21,7 @@ const Login = () => {
   });
   const [error, setError] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if(submitError){setSubmitError('')}
@@ -36,6 +38,7 @@ const Login = () => {
       return;
     }
     try {
+      setLoading(true);
       const data = await apiRequest(API_ROUTES.AUTH.LOGIN, {
         method: 'POST',
         body: JSON.stringify(formData)
@@ -47,6 +50,8 @@ const Login = () => {
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en el inicio de sesión');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -134,7 +139,7 @@ const Login = () => {
                 borderRadius: 3
               }}
             >
-              Login
+              {loading ? <CircularProgress size={24} color="inherit" /> : "Login"}
             </Button>
             <Box sx={{ textAlign: "center", mt: 2 }}>
               <Link

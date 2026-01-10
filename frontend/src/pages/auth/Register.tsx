@@ -3,6 +3,7 @@ import {
   Container,
   Paper,
   TextField,
+  CircularProgress,
   Button,
   Typography,
   Box,
@@ -21,6 +22,7 @@ const Register = () => {
     confirmPassword: ''
   });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -38,6 +40,7 @@ const Register = () => {
     }
 
     try {
+      setLoading(true);
       const response = await apiRequest(API_ROUTES.AUTH.REGISTER, {
         method: 'POST',
         headers: {
@@ -65,6 +68,8 @@ const Register = () => {
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en el registro');
+    } finally {
+      setLoading(false);
     }
   };
 
