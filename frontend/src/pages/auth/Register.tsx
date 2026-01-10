@@ -161,8 +161,9 @@ const Register = () => {
               variant="contained"
               color='secondary'
               sx={{ mt: 3, mb: 2 }}
-            >
-              Registrarse
+              disabled={loading}
+            > 
+              {loading ? <CircularProgress size={24} color="inherit" /> : "Registrarse"}
             </Button>
             <Box sx={{ textAlign: 'center' }}>
             <Link

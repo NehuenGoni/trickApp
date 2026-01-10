@@ -144,7 +144,7 @@ const CreateMatch = () => {
 
   const handleRegisteredPlayerSelection = (event: SelectChangeEvent<string[]>) => {
     const selectedIds = Array.isArray(event.target.value) ? event.target.value : [event.target.value];
-    console.log('IDs seleccionados:', selectedIds);
+    //console.log('IDs seleccionados:', selectedIds);
 
     if (selectedIds.length > getMaxPlayers()) {
       setError('Has excedido el número máximo de jugadores permitidos');
@@ -159,7 +159,7 @@ const CreateMatch = () => {
         isRegistered: true
       }));
 
-    console.log('Jugadores seleccionados:', selectedRegisteredPlayers);
+    //console.log('Jugadores seleccionados:', selectedRegisteredPlayers);
 
     const newSelectedPlayers = Array.from(
       new Map(
@@ -169,7 +169,7 @@ const CreateMatch = () => {
         ].map(player => [player.isRegistered ? player._id : player.guestId, player])
       ).values()
     );
-    console.log('Nuevo estado de jugadores:', newSelectedPlayers);
+    //console.log('Nuevo estado de jugadores:', newSelectedPlayers);
 
     setSelectedPlayers(newSelectedPlayers);
     setError('');
@@ -189,7 +189,7 @@ const CreateMatch = () => {
 
     setLoading(true);
 
-    console.log('Creando partido con equipos:', teams);
+    //console.log('Creando partido con equipos:', teams);
     try {
       const response = await apiRequest(API_ROUTES.MATCHES.CREATE, {
         method: 'POST',
@@ -218,9 +218,9 @@ const CreateMatch = () => {
         })
       });
 
-      console.log('Partido creado:', response);
+      //console.log('Partido creado:', response);
       
-      //navigate(`/matches/scoreboard/${response._id}`);
+      navigate(`/matches/scoreboard/${response._id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear el partido');
     } finally {

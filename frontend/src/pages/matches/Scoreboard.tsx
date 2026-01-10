@@ -51,7 +51,7 @@ const Scoreboard = () => {
   const navigate = useNavigate();
   const [match, setMatch] = useState<Match | null>(null);
   const [error, setError] = useState('');
-  const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
+  //const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
 
@@ -86,7 +86,6 @@ const Scoreboard = () => {
         }
       }
       
-       setTeamDetails(teamsData);
     } catch (err) {
       console.error('Error al cargar el partido:', err);
       setError('Error al cargar el partido');
