@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Autocomplete,
   Container,
   CircularProgress,
   Paper,
@@ -11,7 +12,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Chip,
   SelectChangeEvent,
   Alert,
   Tabs,
@@ -70,7 +70,7 @@ interface Team {
 
 const CreateMatch = () => {
   const navigate = useNavigate();
-  const [matchType, setMatchType] = useState('pairs');
+  const [matchType, setMatchType] = useState('trios');
   const [users, setUsers] = useState<User[]>([]);
 
   const fetchUserData = async () => {
@@ -142,17 +142,14 @@ const CreateMatch = () => {
     setSelectedPlayers(selectedPlayers.filter(player => player.isRegistered && player._id !== playerId));
   };
 
-  const handleRegisteredPlayerSelection = (event: SelectChangeEvent<string[]>) => {
-    const selectedIds = Array.isArray(event.target.value) ? event.target.value : [event.target.value];
-    //console.log('IDs seleccionados:', selectedIds);
-
-    if (selectedIds.length > getMaxPlayers()) {
+  const handleRegisteredPlayerSelection = (userIds: string[]) => {
+    if (userIds.length > getMaxPlayers()) {
       setError('Has excedido el número máximo de jugadores permitidos');
       return;
     }
 
     const selectedRegisteredPlayers: RegisteredPlayer[] = users
-      .filter(user => selectedIds.includes(user._id))
+      .filter(user => userIds.includes(user._id))
       .map(user => ({
         _id: user._id,
         username: user.username,
@@ -217,8 +214,6 @@ const CreateMatch = () => {
           status: "in_progress"
         })
       });
-
-      //console.log('Partido creado:', response);
       
       navigate(`/matches/scoreboard/${response._id}`);
     } catch (err) {
@@ -375,48 +370,31 @@ const CreateMatch = () => {
           <Box sx={{ mb: 3 }}>
             {tabValue === 0 ? (
               <FormControl fullWidth>
-                <InputLabel>Seleccionar Jugadores Registrados</InputLabel>
-                <Select
+                <Autocomplete
                   multiple
-                  value={selectedPlayers.filter((p): p is RegisteredPlayer => p.isRegistered).map(p => p._id)}
-                  onChange={handleRegisteredPlayerSelection}
-                  label="Seleccionar Jugadores Registrados"
-                  MenuProps={{
-                    PaperProps: {
-                      style: {
-                        maxHeight: 48 * 4.5,
-                      },
-                    },
-                    anchorOrigin: {
-                      vertical: 'bottom',
-                      horizontal: 'left',
-                    }
+                  options={users}
+                  getOptionLabel={(option) => option.username}
+                  value={[]}
+                  onChange={(_, selectedUsers) => {
+                    handleRegisteredPlayerSelection(
+                      selectedUsers.map(u => u._id)
+                    );
                   }}
-                  renderValue={(selected) => (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {selected.map((id) => {
-                        const user = users.find(u => u._id === id);
-                        return user ? (
-                          <Chip key={id} label={user.username} />
-                        ) : null;
-                      })}
-                    </Box>
+                  filterSelectedOptions
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Seleccionar Jugadores Registrados"
+                      placeholder="Buscar jugador"
+                    />
                   )}
-                >
-                  {users.map((user) => (
-                    <MenuItem
-                      key={user._id}
-                      value={user._id}
-                      disabled={
-                        selectedPlayers.length >= getMaxPlayers() &&
-                        !selectedPlayers.some(p => p.isRegistered && p._id === user._id)
-                      }
-                    >
-                      {user.username}
-                      {selectedPlayers.some(p => p.isRegistered && p._id === user._id) && ' ✓'}
-                    </MenuItem>
-                  ))}
-                </Select>
+                  renderOption={(props, option) => (
+                    <li {...props} key={option._id}>
+                      {option.username}
+                      {selectedPlayers.some(p => p.isRegistered && p._id === option._id) && ' ✓'}
+                    </li>
+                  )}
+                />
               </FormControl>
             ) : (
               <Box sx={{ display: 'flex', gap: 1 }}>
