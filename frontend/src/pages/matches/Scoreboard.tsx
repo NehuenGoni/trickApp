@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   Button,
   Grid,
-  IconButton,
   Alert,
   Dialog,
   DialogTitle,
@@ -15,8 +13,6 @@ import {
   DialogContentText,
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Remove as RemoveIcon,
   ExitToApp as ExitIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -172,7 +168,6 @@ const Scoreboard = () => {
   const renderTeamScore = (teamIndex: number) => {
     if (!match) return null;
     const team = match.teams[teamIndex];
-    const isWinner = match.winner === team.teamId;
     let teamName
     let myTeam
 
@@ -189,35 +184,76 @@ const Scoreboard = () => {
     }
 
     return (
-      <Paper 
-        elevation={3} 
-        sx={{ 
-          p: 3,
-          textAlign: 'center',
-          bgcolor: isWinner ? '#D4AF37' : 'background.paper'
+    <Box>
+      <Typography variant="h5" gutterBottom align="center" sx={{ fontWeight: 'bold', mb: 2 }}>
+        {teamName}
+      </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'stretch',
+          justifyContent: 'center',
+          gap: 2,
+          mb: 2,
+          mt: 2,
         }}
       >
-        <Typography variant="h6" gutterBottom>
-          {teamName}
+        <Button
+          variant="contained"
+          onClick={() => handleScoreChange(teamIndex, -1)}
+          disabled={match.status === "finished" || team.score <= 0}
+          sx={{
+            minWidth: 56,
+            bgcolor: '#D4AF37',
+            color: '#000',
+            fontSize: '2rem',
+            fontWeight: 'bold',
+            '&:hover': {
+              bgcolor: '#c29d2e',
+            },
+            '&:disabled': {
+              bgcolor: '#e0d3a0',
+              color: '#777',
+            },
+          }}
+        >
+          −
+        </Button>
+
+        <Typography
+          variant="h3"
+          sx={{
+            minWidth: 80,
+            textAlign: 'center',
+            fontWeight: 'bold',
+          }}
+        >
+          {team.score}
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mb: 2 }}>
-          <IconButton 
-            onClick={() => handleScoreChange(teamIndex, -1)}
-            disabled={match.status === "finished" || team.score <= 0}
-          >
-            <RemoveIcon />
-          </IconButton>
-          <Typography variant="h3">
-            {team.score}
-          </Typography>
-          <IconButton 
-            onClick={() => handleScoreChange(teamIndex, 1)}
-            disabled={match.status === "finished" || team.score >= MAX_SCORE}
-          >
-            <AddIcon />
-          </IconButton>
-        </Box>
-      </Paper>
+
+        <Button
+          variant="contained"
+          onClick={() => handleScoreChange(teamIndex, 1)}
+          disabled={match.status === "finished" || team.score >= MAX_SCORE}
+          sx={{
+            minWidth: 56,
+            bgcolor: '#D4AF37',
+            color: '#000',
+            fontSize: '2rem',
+            fontWeight: 'bold',
+            '&:hover': {
+              bgcolor: '#c29d2e',
+            },
+            '&:disabled': {
+              bgcolor: '#e0d3a0',
+              color: '#777',
+            },
+          }}
+        >
+          +
+        </Button>
+      </Box>
+    </Box>
     );
   };
 

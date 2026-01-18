@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Button,
   Container,
   Paper,
   Typography,
@@ -11,13 +15,15 @@ import {
   Grid,
   Chip,
 } from '@mui/material';
-import IconButton from '@mui/material/IconButton';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { isEmpty } from 'lodash';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 
 interface Match {
+  winner: any;
   _id: string;
   tournamentId: string;
   teams: any[];
@@ -116,6 +122,145 @@ const TournamentDetails = () => {
     );
   };
 
+  const quarterFinals = matches.filter(
+    (m) => m.phase === "quarter-finals"
+  );
+
+  const semifinalsGold = matches.filter(
+    (m) => m.phase === "semifinals-gold"
+  );
+
+  const semifinals = matches.filter(
+    (m) => m.phase === "semifinals"
+  );
+
+  const finalGold = matches.filter(
+    (m) => m.phase === "final-gold"
+  );
+
+  const final = matches.filter(
+    (m) => m.phase === "final"
+  );
+
+  const renderParticipants = (players: { playerId: string }[], teamId: string) => {
+    const team = tournament?.teams.find(t => t.teamId === teamId);
+    return team?.players.map(p => p.name).join(", ");
+  };
+
+  const renderTeams = (teamId: string) => {
+    const team = tournament?.teams.find(t => t.teamId === teamId);
+    return team?.name
+  };
+
+  const getWinnersNames = (match: Match, tournament: Tournament) => {
+    const winningTeam = match.teams.find(team => team.teamId === match.winner);
+    const names = winningTeam?.players.map((p: any) => {
+      const player = tournament.teams
+        .flatMap(t => t.players)
+        .find(tp => tp.playerId === p.playerId);
+      return player ? player.name : 'Invitado';
+    });
+
+    if (!winningTeam) return 'Equipo no encontrado';
+
+    return names?.length
+    ? (
+        <>
+          {names.map((name: String) => (
+            <Typography variant="body2">
+              👑 {name}
+            </Typography>
+          ))}
+        </>
+      )
+    : 'Invitados';
+  }
+
+  const renderMatchCard = (match: Match) => {
+    const userInMatch = isUserInMatch(match, currentUserId);
+
+    console.log('Rendering match:', match);
+    return (
+      <Grid item xs={12} key={match._id}>
+        <Paper sx={{ p: 2 }}>
+          {/* HEADER */}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 1,
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{ fontSize: { xs: "1rem", sm: "1.3rem" }, fontWeight: "bold" }}
+            >
+              {`${match.teams[0]?.score} - ${match.teams[1]?.score}`}
+            </Typography>
+
+            <Chip
+              label={match.status === "in_progress" ? "En progreso" : "Finalizado"}
+              color={match.status === "in_progress" ? "warning" : "success"}
+              sx={{
+                height: { xs: 18, sm: 24 },
+                fontSize: { xs: "0.55rem", sm: "0.75rem" },
+              }}
+            />
+          </Box>
+
+          {/* TEAMS */}
+          <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
+            {[0, 1].map((idx) => (
+              <Box key={idx}>
+                <Typography sx={{ fontSize: { xs: "0.9rem", sm: "1.1rem" } }}>
+                  {renderTeams(match.teams[idx]?.teamId)}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: "0.75rem", sm: "0.85rem" } }}
+                >
+                  {renderParticipants(
+                    match.teams[idx]?.players ?? [],
+                    match.teams[idx]?.teamId
+                  )}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {/* PLAY */}
+          {userInMatch && (
+            <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+              <Button
+                variant="contained"
+                startIcon={match.status === "in_progress" ? <PlayArrowIcon /> : null }
+                disabled={match.status !== "in_progress"}
+                onClick={() => handlePlay(match._id)}
+                sx={{
+                  backgroundColor: "#fbc02d", 
+                  color: "#000",
+                  fontWeight: "bold",
+                  px: { xs: 2, sm: 4 },
+                  py: { xs: 0.6, sm: 1.2 },
+                  fontSize: { xs: "0.85rem", sm: "1rem" },
+                  borderRadius: 2,
+                  "&:hover": {
+                    backgroundColor: "#D4AF37",
+                  },
+                }}
+              >
+                {match.status === "in_progress" ? "Jugar" : "Finalizado"}
+              </Button>
+            </Box>
+          )}
+        </Paper>
+      </Grid>
+    );
+  };
+
+
   const handlePlay = (matchId: string) => {
     navigate(`/matches/scoreboard/${matchId}`);
   };
@@ -147,7 +292,7 @@ const TournamentDetails = () => {
       <Box>
         <NavBar />
         <Container maxWidth="md" sx={{ mt: 4 }}>
-          <Alert severity="error">Torneo no encontrado</Alert>
+          <Alert severity="error">Torneo no encontrado</Alert> <CircularProgress />
         </Container>
       </Box>
     );
@@ -167,7 +312,7 @@ const TournamentDetails = () => {
               {tournament.description}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Fecha de inicio: {new Date(tournament.startDate).toLocaleDateString()}
+              Fecha del Torneo: {new Date(tournament.startDate).toLocaleDateString()}
             </Typography>
             <Chip 
               label={getStatusText(tournament.status)}
@@ -175,65 +320,118 @@ const TournamentDetails = () => {
               sx={{ mt: 1 }}
             />
           </Box>
+          {
+            !isEmpty(finalGold) && finalGold.filter(m => m.status === "finished").length === finalGold.length && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body1" gutterBottom>
+              Ganadores del torneo:
+              {finalGold.map((match, idx) => (
+                <Typography key={idx} variant="body2">
+                  {getWinnersNames(match, tournament)}
+                </Typography>
+              ))}
+            </Typography>
+          </Box>  
+            )}
+          <Divider sx={{ my: 1 }} />
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h5" gutterBottom>
+              Partidos del Torneo
+            </Typography>
+          </Box>
+          <Divider sx={{ my: 1 }} />
 
-          <Divider sx={{ my: 3 }} />
+          <Box sx={{ mb: 2, alignContent: 'center' }}>
+            <Accordion >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography fontWeight="bold">
+                  Cuartos de Final
+                </Typography>
+              </AccordionSummary>
 
-          <Typography variant="h5" gutterBottom>
-            Partidos del Torneo
-          </Typography>
-
-          <Grid container spacing={3}>
-            {matches.map((match) => {
-              const userInMatch = isUserInMatch(match, currentUserId);
-
-              return (
-                <Grid item xs={12} key={match._id}>
-                  <Paper sx={{ p: 2 }}>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        mb: 1,
-                      }}
-                    >
-                      <Chip
-                        label={match.status === "in_progress" ? "En progreso" : "Finalizado"}
-                        color={match.status === "in_progress" ? "warning" : "success"}
-                        size="small"
-                      />
-                    </Box>
-
-                    {/* Equipos y score */}
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <Typography variant="h6">
-                        Equipo 1 (score: {match.teams[0]?.score ?? 0})
-                      </Typography>
-
-                      <Typography variant="h6" sx={{ mx: 2 }}>
-                        {match.status === "finished"
-                          ? `${match.teams[0]?.score} - ${match.teams[1]?.score}`
-                          : "vs"}
-                      </Typography>
-
-                      <Typography variant="h6">
-                        Equipo 2 (score: {match.teams[1]?.score ?? 0})
-                      </Typography>
-                    </Box>
-
-                    {/* Botón de jugar solo si el user participa */}
-                    {userInMatch && (
-                      <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                        <IconButton color="primary" onClick={() => handlePlay(match._id)}>
-                          <PlayArrowIcon />
-                        </IconButton>
-                      </Box>
-                    )}
-                  </Paper>
+              <AccordionDetails>
+                <Grid container spacing={3}>
+                  {quarterFinals.map(renderMatchCard)}
                 </Grid>
-              );
-            })}
-          </Grid>
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+          {
+            !isEmpty(semifinalsGold) && (
+            <Box sx={{ mb: 2, alignContent: 'center' }}>
+              <Accordion >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography fontWeight="bold">
+                    Semifinales de Oro
+                  </Typography>
+                </AccordionSummary>
+
+                <AccordionDetails>
+                  <Grid container spacing={3}>
+                    {semifinalsGold.map(renderMatchCard)}
+                  </Grid>
+                </AccordionDetails>
+              </Accordion>
+            </Box>
+            )
+          }
+          {
+            !isEmpty(semifinals) && (
+            <Box sx={{ mb: 2, alignContent: 'center' }}>
+              <Accordion >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography fontWeight="bold">
+                    Semifinales de Plata
+                  </Typography>
+                </AccordionSummary>
+
+                <AccordionDetails>
+                  <Grid container spacing={3}>
+                    {semifinals.map(renderMatchCard)}
+                  </Grid>
+                </AccordionDetails>
+              </Accordion>
+            </Box>
+            )
+          }
+          {
+            !isEmpty(finalGold) && (
+            <Box sx={{ mb: 2, alignContent: 'center' }}>
+              <Accordion >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography fontWeight="bold">
+                    Final Oro
+                  </Typography>
+                </AccordionSummary>
+
+                <AccordionDetails>
+                  <Grid container spacing={3}>
+                    {finalGold.map(renderMatchCard)}
+                  </Grid>
+                </AccordionDetails>
+              </Accordion>
+            </Box>
+            )
+          }
+          {
+            !isEmpty(final) && (
+            <Box sx={{ mb: 2, alignContent: 'center' }}>
+              <Accordion >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography fontWeight="bold">
+                    Final Plata
+                  </Typography>
+                </AccordionSummary>
+
+                <AccordionDetails>
+                  <Grid container spacing={3}>
+                    {final.map(renderMatchCard)}
+                  </Grid>
+                </AccordionDetails>
+              </Accordion>
+            </Box>
+            )
+          }
         </Paper>
       </Container>
     </Box>

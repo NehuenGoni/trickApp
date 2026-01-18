@@ -263,7 +263,7 @@ const TournamentList = () => {
             <Button onClick={() => setDeleteDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleDelete} color="error" variant="contained">
+            <Button onClick={handleDelete} color="error" variant="contained" disabled={true}>
               Eliminar
             </Button>
           </DialogActions>
