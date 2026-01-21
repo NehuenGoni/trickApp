@@ -35,7 +35,7 @@ interface Tournament {
   name: string;
   description: string;
   startDate: string;
-  status: 'upcoming' | 'in_progress' | 'completed';
+  status: 'upcoming' | 'in_progress' | 'finished';
   teams: Array<{
     teamId: string;
     name: string;
@@ -100,14 +100,23 @@ const TournamentList = () => {
     }
   };
 
-  const getStatusColor = (status: Tournament['status']) => {
+  const getStatusStyles = (status: Tournament['status']) => {
     switch (status) {
       case 'upcoming':
-        return 'info';
+        return {
+          bgcolor: 'info.main',
+          color: 'info.contrastText',
+        };
       case 'in_progress':
-        return 'success';
-      case 'completed':
-        return 'default';
+        return {
+          bgcolor: '#D4AF37', // amarillo app
+          color: '#000',
+        };
+      case 'finished':
+        return {
+          bgcolor: 'success.main',
+          color: 'success.contrastText',
+        };
     }
   };
 
@@ -117,7 +126,7 @@ const TournamentList = () => {
         return 'Próximo';
       case 'in_progress':
         return 'En Curso';
-      case 'completed':
+      case 'finished':
         return 'Finalizado';
     }
   };
@@ -173,77 +182,95 @@ const TournamentList = () => {
           ) : (
             <List>
               {tournaments.map((tournament) => (
-                <ListItem
-                  key={tournament._id}
+              <Paper
+                elevation={1}
+                sx={{
+                  p: 2,
+                  mb: 1.5,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                }}
+              >
+                <Box
                   sx={{
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 1,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
                     mb: 1,
-                    '&:hover': {
-                      backgroundColor: 'action.hover'
-                    }
+                    gap: 2,
                   }}
                 >
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="subtitle1">
-                          {tournament.name}
-                        </Typography>
-                        <Chip
-                          size="small"
-                          label={getStatusLabel(tournament.status)}
-                          color={getStatusColor(tournament.status)}
-                        />
-                      </Box>
-                    }
-                    secondary={
-                      <>
-                        <Typography variant="body2" component="span">
-                          {tournament.description}
-                        </Typography>
-                        <Box sx={{ mt: 1 }}>
-                          <Chip
-                            size="small"
-                            label={`${tournament.teams.length} equipos`}
-                            sx={{ mr: 1 }}
-                          />
-                          <Chip
-                            size="small"
-                            label={`${tournament?.matches?.length} partidos`}
-                          />
-                        </Box>
-                      </>
-                    }
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {tournament.name}
+                    </Typography>
+                    {tournament.description && (
+                      <Typography variant="body2" color="text.secondary">
+                        {tournament.description}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Chip
+                    size="small"
+                    label={getStatusLabel(tournament.status)}
+                    sx={getStatusStyles(tournament.status)}
                   />
-                  <ListItemSecondaryAction sx={{ display: 'flex', gap: 1 }}>
-                    <IconButton
-                      onClick={() => navigate(`/tournaments/${tournament._id}`)}
-                      color="primary"
-                      title="Ver detalles"
-                    >
-                      <ViewIcon />
-                    </IconButton>
-                    <IconButton
-                      onClick={() => navigate(`/tournaments/edit/${tournament._id}`)}
-                      color="primary"
-                      title="Editar torneo"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      onClick={() => {
-                        setSelectedTournament(tournament._id);
-                        setDeleteDialogOpen(true);
-                      }}
-                      color="error"
-                      title="Eliminar torneo"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <Chip size="small" label={`${tournament.teams.length} equipos`} />
+                  <Chip size="small" label={`${tournament.matches?.length} partidos`} />
+                </Box>
+
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: { xs: 'center', sm: 'flex-end' },
+                    gap: 1,
+                    pt: 1,
+                    borderTop: 1,
+                    borderColor: 'divider',
+                  }}
+                >
+                  <IconButton
+                    title="Ver detalles"
+                    onClick={() => navigate(`/tournaments/${tournament._id}`)}
+                    sx={{
+                      color: '#D4AF37',
+                      '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
+                    }}
+                  >
+                    <ViewIcon />
+                  </IconButton>
+
+                  <IconButton 
+                    title="Editar torneo"
+                    sx={{
+                      color: '#4f49cd',
+                      '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
+                    }}
+                   onClick={() => navigate(`/tournaments/${tournament._id}/edit`)}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton
+                    title="Eliminar torneo"
+                    disabled={tournament.status === 'finished'}
+                    onClick={() => {
+                      setSelectedTournament(tournament._id);
+                      setDeleteDialogOpen(true);
+                    }}
+                    sx={{
+                      color: 'error.main',
+                      '&:hover': { backgroundColor: 'rgba(211,47,47,0.15)' },
+                    }}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Box>
+              </Paper>
               ))}
             </List>
           )}
@@ -263,7 +290,7 @@ const TournamentList = () => {
             <Button onClick={() => setDeleteDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleDelete} color="error" variant="contained" disabled={true}>
+            <Button onClick={handleDelete} color="error" variant="contained">
               Eliminar
             </Button>
           </DialogActions>

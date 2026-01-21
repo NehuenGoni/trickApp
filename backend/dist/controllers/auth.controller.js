@@ -52,7 +52,7 @@ const loginUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             res.status(400).json({ message: "Contraseña incorrecta" });
             return;
         }
-        const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+        const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "60d" });
         res.status(200).json({ message: "Login exitoso", token, userId: user._id });
     }
     catch (err) {
