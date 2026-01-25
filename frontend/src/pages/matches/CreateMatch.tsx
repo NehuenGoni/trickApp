@@ -156,7 +156,6 @@ const CreateMatch = () => {
         isRegistered: true
       }));
 
-    //console.log('Jugadores seleccionados:', selectedRegisteredPlayers);
 
     const newSelectedPlayers = Array.from(
       new Map(
@@ -166,7 +165,6 @@ const CreateMatch = () => {
         ].map(player => [player.isRegistered ? player._id : player.guestId, player])
       ).values()
     );
-    //console.log('Nuevo estado de jugadores:', newSelectedPlayers);
 
     setSelectedPlayers(newSelectedPlayers);
     setError('');
@@ -186,7 +184,6 @@ const CreateMatch = () => {
 
     setLoading(true);
 
-    //console.log('Creando partido con equipos:', teams);
     try {
       const response = await apiRequest(API_ROUTES.MATCHES.CREATE, {
         method: 'POST',
