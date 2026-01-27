@@ -297,8 +297,8 @@ const Scoreboard = () => {
         
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
           <Button
-            variant="outlined"
-            color="primary"
+            variant="contained"
+            color="secondary"
             startIcon={<ExitIcon />}
             onClick={handleExit}
           >

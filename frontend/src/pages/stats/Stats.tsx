@@ -151,7 +151,7 @@ const handleOpenDetails = async (match: any) => {
     <Box>
       <NavBar />
       <Box sx={{ p: 3 }}>
-        <Typography variant="h4" gutterBottom>
+        <Typography variant="h4" gutterBottom sx={{ textAlign: "center", mb: 2 }}>
           Mis Estadísticas
         </Typography>
         {loading ? (
@@ -164,7 +164,7 @@ const handleOpenDetails = async (match: any) => {
               <Paper sx={{ p: 2, textAlign: "center" }}>
                 <Typography variant="h6">Partidos Jugados</Typography>
                 <Typography variant="h4">{matchLength ?? 0}</Typography>
-                <Button variant="outlined" sx={{ mt: 1 }} onClick={() => isEmpty(matchStats) ? fetchUserStats() : setShowMatches(!showMatches)}>Ver Partidos</Button>
+                <Button variant="contained" color='success' sx={{ mt: 1 }} onClick={() => isEmpty(matchStats) ? fetchUserStats() : setShowMatches(!showMatches)}>Ver Partidos</Button>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={4}>
@@ -184,7 +184,7 @@ const handleOpenDetails = async (match: any) => {
         )}
         {showMatches && (
           <Box mt={4}>
-            <Typography variant="h5" gutterBottom>Detalle de Partidos</Typography>
+            <Typography variant="h5" textAlign='center' gutterBottom>Detalle de Partidos</Typography>
             <TableContainer component={Paper}>
               <Table>
                 <TableHead>
@@ -329,17 +329,17 @@ const handleOpenDetails = async (match: any) => {
       </Box>
 
       <Dialog open={detailsDialogOpen} onClose={handleCloseDetails} maxWidth="sm" fullWidth>
-        <DialogTitle>
+        <DialogTitle variant="h5" sx={{ display: 'flex', fontWeight: 'bold', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center'}}>
           Detalles del Partido
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
           {loadingDetails ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
               <CircularProgress />
             </Box>
           ) : (
             selectedMatch && (
-              <Box sx={{ mt: 2 }}>
+              <Box >
               <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
                   Información
@@ -399,7 +399,7 @@ const handleOpenDetails = async (match: any) => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDetails} color="primary">
+          <Button onClick={handleCloseDetails} color="secondary" variant="contained">
             Cerrar
           </Button>
         </DialogActions>
