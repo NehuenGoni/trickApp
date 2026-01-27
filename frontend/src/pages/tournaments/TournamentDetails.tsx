@@ -144,7 +144,33 @@ const TournamentDetails = () => {
 
   const renderParticipants = (players: { playerId: string }[], teamId: string) => {
     const team = tournament?.teams.find(t => t.teamId === teamId);
-    return team?.players.map(p => p.name).join(", ");
+
+    if (!team || team.players.length === 0) {
+      return null;
+    }
+
+    return (
+      <Box>
+        {team.players.map((p) => (
+          <Typography
+            key={p.playerId}
+            sx={{
+              fontSize: {
+                xs: '0.75rem',   // mobile
+                sm: '0.85rem',
+                md: '0.9rem'
+              },
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',   // evita saltos de línea
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
+            {p.name}
+          </Typography>
+        ))}
+      </Box>
+    );
   };
 
   const renderTeams = (teamId: string) => {

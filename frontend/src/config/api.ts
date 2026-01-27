@@ -10,7 +10,9 @@ const API_ROUTES = {
     LIST: `${API_BASE_URL}/users`,
     DETAIL: (id: string) => `${API_BASE_URL}/users/${id}`,
     STATS:  (id: any) => `${API_BASE_URL}/users/${id}/stats`,
-    SEARCH: (query: string) => `${API_BASE_URL}/users/search?query=${query}`
+    MATCHESLENGTH: (id: any) => `${API_BASE_URL}/users/${id}/matches-length`,
+    GETNAMES: (id: any) => `${API_BASE_URL}/users/matchesNames/${id}`,
+    SEARCH: (query: string) => `${API_BASE_URL}/users/search?query=${query}`,
   },
   MATCHES: {
     CREATE: `${API_BASE_URL}/matches`,
@@ -48,8 +50,21 @@ const API_ROUTES = {
   },
 };
 
-export const apiRequest = async (url: string, options: RequestInit = {}) => {
+export const apiRequest = async (url: string, options: RequestInit & { params?: Record<string, any> } = {}) => {
   const token = localStorage.getItem('token');
+  
+  // Construir URL con query parameters si existen
+  let finalUrl = url;
+  if (options.params) {
+    const queryParams = new URLSearchParams();
+    Object.entries(options.params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+    finalUrl = `${url}?${queryParams.toString()}`;
+    delete (options as any).params;
+  }
   
   const defaultHeaders = {
     'Content-Type': 'application/json',
@@ -57,7 +72,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}) => {
   };
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(finalUrl, {
       ...options,
       headers: {
         ...defaultHeaders,

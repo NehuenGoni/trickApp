@@ -18,6 +18,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import { useWakeLock } from '../../hooks/useWakeLock';
 
 interface Team {
   teamId: string;
@@ -51,6 +52,7 @@ const Scoreboard = () => {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
 
+  useWakeLock(match?.status === 'in_progress');
 
   const fetchMatch = useCallback ( async () => {
     if (!matchId) {
@@ -295,8 +297,8 @@ const Scoreboard = () => {
         
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
           <Button
-            variant="outlined"
-            color="primary"
+            variant="contained"
+            color="secondary"
             startIcon={<ExitIcon />}
             onClick={handleExit}
           >
