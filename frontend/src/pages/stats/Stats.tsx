@@ -34,7 +34,7 @@ const Stats = () => {
 
   useEffect(() => {
     setLoading(false)
-    //fetchUserMatchesLength()
+    fetchUserMatchesLength()
   }, []);
 
   const fetchUserMatchesLength = async () => {
@@ -50,7 +50,6 @@ const Stats = () => {
   };
 
   const fetchUserStats = async () => {
-    fetchUserMatchesLength()
     try {
       const userId = localStorage.getItem("userId")
       const skip = (currentPage - 1) * pageSize;
