@@ -8,13 +8,13 @@ router.get("/", authMiddleware, getAllUsers);
 
 router.get("/search", authMiddleware, searchUsers);
 
-router.get("/:id", authMiddleware, getUserById);
+router.get("/matchesNames/:id", authMiddleware, getUserNameById);
 
 router.get("/:id/stats", authMiddleware, getUserMatches);
 
 router.get("/:id/matches-length", authMiddleware, getUserMatchesLength);
 
-router.get("/matchesNames/:id", authMiddleware, getUserNameById);
+router.get("/:id", authMiddleware, getUserById);
 
 
 export default router; 
