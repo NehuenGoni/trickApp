@@ -248,6 +248,10 @@ const CreateTournament = () => {
               isRegistered: false
             };
           }
+          return {
+            name: member.username,
+            isRegistered: false
+          };
         })
 
         const teamResponse: TeamResponse = await apiRequest(API_ROUTES.TOURNAMENTS.ADD_TEAM(tournamentId), {

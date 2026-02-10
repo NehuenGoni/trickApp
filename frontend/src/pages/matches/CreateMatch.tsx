@@ -139,7 +139,7 @@ const CreateMatch = () => {
   };
 
   const handleRemovePlayer = (playerId: string) => {
-    setSelectedPlayers(selectedPlayers.filter(player => player.isRegistered && (player._id !== playerId) || (!player.isRegistered && player.guestId !== playerId)));
+    setSelectedPlayers(selectedPlayers.filter(player => (player.isRegistered && (player._id !== playerId)) || (!player.isRegistered && player.guestId !== playerId)));
   };
 
   const handleRegisteredPlayerSelection = (userIds: string[]) => {
