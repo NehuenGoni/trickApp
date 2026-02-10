@@ -156,12 +156,12 @@ const TournamentDetails = () => {
             key={p.playerId}
             sx={{
               fontSize: {
-                xs: '0.75rem',   // mobile
+                xs: '0.75rem',  
                 sm: '0.85rem',
                 md: '0.9rem'
               },
               lineHeight: 1.2,
-              whiteSpace: 'nowrap',   // evita saltos de línea
+              whiteSpace: 'nowrap',   
               overflow: 'hidden',
               textOverflow: 'ellipsis'
             }}

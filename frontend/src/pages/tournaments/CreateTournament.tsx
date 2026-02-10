@@ -24,8 +24,8 @@ interface User {
 }
 
 interface GuestUser {
-  name: string;
-  isGuest: true;
+  username: string;
+  isRegistered: false;
 }
 
 type TeamMember = User | GuestUser;
@@ -83,7 +83,6 @@ const CreateTournament = () => {
     setSearchingUsers(true);
     try {
       const data = await apiRequest(API_ROUTES.USERS.LIST);
-      console.log('Usuarios cargados:', data);
       setUsers(data || []);
     } catch (err: any) {
       console.error('Error al cargar usuarios:', err);
@@ -203,7 +202,7 @@ const CreateTournament = () => {
         ],
         type: 'tournament',
         phase: 'quarter-finals',
-        status: 'scheduled'
+        status: 'in_progress'
       });
     }
     return matches;
@@ -231,34 +230,30 @@ const CreateTournament = () => {
       const tournamentId = tournamentResponse._id;
       const createdTeams = [];
 
-      // Crear los equipos en el torneo
-      for (const team of formData.teams) {
-        // Asegurarnos de que el equipo tenga un nombre
-        const teamName = team.name || `Equipo ${createdTeams.length + 1}`;
-        
-        // Mapear los miembros del equipo
+      for (const team of formData.teams) {     
+
         const teamMembers = team.members.map((member: any) => {
-          if ('isGuest' in member) {
-            // Si es un invitado, generar un ID temporal
-            return {
-              name: member.name,
-              playerId: `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              isGuest: true
-            };
-          } else {
-            // Si es un usuario registrado, usar su ID
+
+          if(member._id) {
+            console.log('Miembro registrado:', member);
             return {
               name: member.username,
               playerId: member._id,
-              isGuest: false
+              isRegistered: true
+            };
+          } else if(member.isRegistered === false) {
+            console.log('Miembro no registrado:', member);
+            return {
+              name: member.username,
+              isRegistered: false
             };
           }
-        });
+        })
 
         const teamResponse: TeamResponse = await apiRequest(API_ROUTES.TOURNAMENTS.ADD_TEAM(tournamentId), {
           method: 'POST',
           body: JSON.stringify({
-            name: teamName,
+            name: team.name,
             members: teamMembers
           })
         });
@@ -287,7 +282,7 @@ const CreateTournament = () => {
             teams: match.teams,
             type: 'tournament',
             phase: 'quarter-finals',
-            status: 'scheduled'
+            status: 'in_progress'
           };
           
           console.log('Enviando partido:', JSON.stringify(matchData, null, 2));
@@ -325,8 +320,7 @@ const CreateTournament = () => {
       navigate(`/tournaments/${tournamentId}`);
     } catch (error: any) {
       console.error('Error al crear el torneo:', error);
-      
-      // Verificar si es un error de autenticación
+      setLoading(false);
       if (isAuthError(error)) {
         localStorage.removeItem('token');
         navigate('/login', { 
@@ -347,8 +341,8 @@ const CreateTournament = () => {
 
     const newTeams = [...formData.teams];
     const guestMember: GuestUser = {
-      name: team.guestName.trim(),
-      isGuest: true
+      username: team.guestName.trim(),
+      isRegistered: false
     };
 
     const maxMembers = formData.type === 'duos' ? 2 : 3;
@@ -377,19 +371,12 @@ const CreateTournament = () => {
       return;
     }
 
-    // Si el equipo no tiene nombre, asignarle uno automáticamente
-    const teamToAdd = {
-      ...team,
-      name: team.name || `Equipo ${formData.teams.length + 1}`
-    };
-
-    // Agregar el equipo actual y crear uno nuevo vacío
     setFormData(prev => ({
       ...prev,
       teams: [
-        ...prev.teams.slice(0, -1), // Excluir el último equipo (el actual)
-        teamToAdd, // Agregar el equipo actual con nombre asignado
-        { name: '', members: [], guestName: '' } // Crear uno nuevo vacío
+        ...prev.teams.slice(0, -1), 
+        team,
+        { name: `Equipo ${prev.teams.length + 1}`, members: [], guestName: '' }
       ]
     }));
   };
@@ -402,19 +389,16 @@ const CreateTournament = () => {
   };
 
   const getAvailableUsers = (currentTeamIndex: number) => {
-    // Obtener todos los usuarios que ya están en otros equipos
     const usersInOtherTeams = formData.teams
-      .filter((_, index) => index !== currentTeamIndex) // Excluir el equipo actual
+      .filter((_, index) => index !== currentTeamIndex) 
       .flatMap(team => 
         team.members
           .filter((member): member is User => !('isGuest' in member))
           .map(member => member._id)
       );
-
-    // Filtrar los usuarios disponibles
     return users.filter(user => !usersInOtherTeams.includes(user._id));
   };
-
+  
   const getStepContent = (step: number) => {
     switch (step) {
       case 0:
@@ -476,12 +460,16 @@ const CreateTournament = () => {
         return (
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              Crea 8 equipos para el torneo. El formato será de eliminación directa:
+              Crea 8 equipos para el torneo. 
+              El formato será una copa con las siguientes fases:
               <ul>
                 <li>Cuartos de final (8 equipos)</li>
-                <li>Semifinales (4 equipos)</li>
-                <li>Final (2 equipos)</li>
-                <li>Partido por tercer y cuarto puesto</li>
+                <li>Semifinales de Oro (4 equipos)</li>
+                <li>Semifinales de Plata (4 equipos)</li>
+                <li>Partido por 3er y 4to puesto</li>
+                <li>Partido por 7mo y 8vo puesto</li> 
+                <li>Final Plata </li> 
+                <li>Final Oro</li>              
               </ul>
               <Typography variant="subtitle2" sx={{ mt: 1 }}>
                 {formData.type === 'duos' 
@@ -620,7 +608,7 @@ const CreateTournament = () => {
                   .map((member, memberIndex) => (
                     <Chip
                       key={memberIndex}
-                      label={member.name}
+                      label={member.username}
                       onDelete={() => {
                         const newTeams = [...formData.teams];
                         newTeams[index].members = newTeams[index].members.filter((_, i) => 
@@ -637,13 +625,11 @@ const CreateTournament = () => {
               variant="outlined"
               onClick={() => {
                 if (formData.teams.length === 0) {
-                  // Si no hay equipos, crear uno vacío
                   setFormData(prev => ({
                     ...prev,
                     teams: [{ name: '', members: [], guestName: '' }]
                   }));
                 } else {
-                  // Si hay equipos, verificar el último equipo
                   const currentTeam = formData.teams[formData.teams.length - 1];
                   if (currentTeam && currentTeam.members.length === (formData.type === 'duos' ? 2 : 3)) {
                     addTeam(currentTeam);
@@ -690,9 +676,9 @@ const CreateTournament = () => {
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {formData.teams[i * 2].members.map(member => 
-                      'isGuest' in member ? member.name : member.username
+                      'isGuest' in member ? member.username : member.username
                     ).join(', ')} vs {formData.teams[i * 2 + 1].members.map(member => 
-                      'isGuest' in member ? member.name : member.username
+                      'isGuest' in member ? member.username : member.username
                     ).join(', ')}
                   </Typography>
                 </Paper>
@@ -723,14 +709,14 @@ const CreateTournament = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
+        <Paper elevation={3} sx={{ p: 3 }}>
           <Typography variant="h5" component="h1" gutterBottom>
             Crear Nuevo Torneo
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-          <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+          <Stepper activeStep={activeStep} sx={{ mb: 2, mt: 2, ml: -2 }}>
             {steps.map((label) => (
               <Step key={label}>
                 <StepLabel>{label}</StepLabel>

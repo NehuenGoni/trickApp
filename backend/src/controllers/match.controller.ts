@@ -12,8 +12,6 @@ export const createMatch = async (req: AuthRequest, res: Response) => {
   try {
     const { tournament, teams, type, phase } = req.body;
 
-    console.log(teams);
-
     if (!Array.isArray(teams)) {
       res.status(400).json({ 
         message: "El campo 'teams' debe ser un array",
@@ -22,24 +20,26 @@ export const createMatch = async (req: AuthRequest, res: Response) => {
       return 
     }
 
-    const isValidTeam = teams.every(team => 
-      team &&
-      typeof team === "object" &&
-      "teamId" in team &&
-      "score" in team &&
-      Array.isArray(team.players) &&
-      team.players.every((p: any) =>
-        (p.isGuest === false && p.playerId) ||
-        (p.isGuest === true && p.guestId)
-      )
-    );
+    if( type === MATCH_TYPES.FRIENDLY ) {    
+      const isValidTeam = teams.every(team => 
+        team &&
+        typeof team === "object" &&
+        "teamId" in team &&
+        "score" in team &&
+        Array.isArray(team.players) &&
+          team.players.every((p: any) =>
+            (p.isGuest === false && p.playerId) ||
+            (p.isGuest === true && p.guestId)
+          )
+      );
 
-    if (!isValidTeam) {
-      res.status(400).json({ 
-        message: "Cada equipo debe tener 'teamId' y 'score'",
-        error: { received: teams }
-      });
-      return 
+      if (!isValidTeam) {
+        res.status(400).json({ 
+          message: "Cada equipo debe tener 'teamId' y 'score'",
+          error: { received: teams }
+        });
+        return 
+      }
     }
 
     let matchData: any = {

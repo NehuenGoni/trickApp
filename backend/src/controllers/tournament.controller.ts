@@ -84,24 +84,20 @@ export const addPlayerToTournament = async (req: Request, res: Response) => {
     try {
       const { tournamentId, playerId } = req.body;
   
-      // Verificar si el torneo existe
       const tournament = await TournamentModel.findById(tournamentId);
       if (!tournament) {
         return res.status(404).json({ message: "Torneo no encontrado" });
       }
   
-      // Verificar si el usuario existe
       const player = await User.findById(playerId);
       if (!player) {
         return res.status(404).json({ message: "Jugador no encontrado" });
       }
   
-      // Verificar si el jugador ya está en el torneo
       if (tournament.teams.includes(playerId)) {
         return res.status(400).json({ message: "El jugador ya está en el torneo" });
       }
   
-      // Agregar el jugador
       tournament.teams.push(playerId);
       await tournament.save();
   
@@ -130,12 +126,12 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
         name,
         players: members.map((member: any) => ({
           _id: new mongoose.Types.ObjectId(),
-          playerId: member.playerId,           
+          playerId: member.playerId ? member.playerId : new mongoose.Types.ObjectId(),           
           name: member.name,
-          isGuest: member.isGuest ?? false
+          isGuest: member.isGuest || !member.isRegistered ? false : true
         }))
       };
-  
+      
       tournament.teams.push(newTeam);
       await tournament.save();
   
@@ -149,7 +145,7 @@ export const createTeamInTournament = async (req: Request, res: Response) => {
   export const updateTeam = async (req: Request, res: Response) => {
     try {
       const { tournamentId, teamId } = req.params;
-      const { players } = req.body; // Nuevos jugadores del equipo
+      const { players } = req.body; 
   
       const tournament = await TournamentModel.findById(tournamentId);
       if (!tournament) {
