@@ -5,6 +5,7 @@ interface IUser {
   username: string;
   email: string;
   password: string;
+  totalPoints: number;
   comparePassword(password: string): Promise<boolean>
 }
 
@@ -12,6 +13,7 @@ const userSchema = new mongoose.Schema<IUser>({
   username: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  totalPoints: { type: Number, default: 0, min: 0 },
 });
 
 userSchema.pre("save", async function (next) {

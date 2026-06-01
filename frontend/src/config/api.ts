@@ -26,10 +26,17 @@ const API_ROUTES = {
   TOURNAMENTS: {
     CREATE: `${API_BASE_URL}/tournaments`,
     LIST: `${API_BASE_URL}/tournaments`,
+    OPEN: `${API_BASE_URL}/tournaments/open`,
     GET: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
-    ADD_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams`
+    ADD_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams`,
+    START: (id: string) => `${API_BASE_URL}/tournaments/${id}/start`,
+    REGISTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/register`,
+    ADD_GUEST_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams/guests`,
+    LEADERBOARD: (id: string) => `${API_BASE_URL}/tournaments/${id}/leaderboard`,
+    SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
+    SIGNUP_ADMIN_REMOVE: (id: string, userId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${userId}`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
