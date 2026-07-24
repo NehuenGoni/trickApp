@@ -115,6 +115,7 @@ const CreateMatch = () => {
   const handleTypeChange = (event: SelectChangeEvent) => {
     setMatchType(event.target.value);
     setSelectedPlayers([]);
+    fetchUserData();
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -196,6 +197,7 @@ const CreateMatch = () => {
               if (player.isRegistered) {
                 return {
                   playerId: player._id,
+                  username: player.username,
                   isGuest: false
                 };
               }

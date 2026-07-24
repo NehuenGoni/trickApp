@@ -268,6 +268,62 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+export const updateMatchScore = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { scores } = req.body as {
+      scores?: { teamId: string; score: number }[];
+    };
+
+    if (!Array.isArray(scores) || scores.length === 0) {
+      return void res.status(400).json({ message: "El campo 'scores' debe ser un array no vacío" });
+    }
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return void res.status(404).json({ message: "Partido no encontrado" });
+    }
+
+    if (match.status === MATCH_STATUS.FINISHED) {
+      return void res.status(409).json({ message: "El partido ya está finalizado" });
+    }
+
+    for (const s of scores) {
+      if (typeof s.score !== "number" || s.score < 0 || s.score > MAX_SCORE) {
+        return void res.status(400).json({
+          message: `Score inválido (debe estar entre 0 y ${MAX_SCORE})`
+        });
+      }
+    }
+
+    const reachingMax = scores.filter((s) => s.score === MAX_SCORE).length;
+    if (reachingMax > 1) {
+      return void res
+        .status(400)
+        .json({ message: "Dos equipos no pueden alcanzar el máximo simultáneamente" });
+    }
+
+    for (const s of scores) {
+      const team = match.teams.find((t) => t.teamId.toString() === s.teamId.toString());
+      if (!team) {
+        return void res.status(400).json({
+          message: "teamId no pertenece a este partido",
+          error: { teamId: s.teamId }
+        });
+      }
+      team.score = s.score;
+    }
+
+    await match.save();
+
+    res.status(200).json(match);
+  } catch (error) {
+    const err = error as { message?: string };
+    res
+      .status(400)
+      .json({ message: "Error al actualizar el marcador", error: { message: err.message } });
+  }
+};
+
 export const deleteMatch = async (req: Request, res: Response): Promise<void> => {
   try {
     const match = await Match.findById(req.params.id);

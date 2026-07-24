@@ -20,6 +20,7 @@ const API_ROUTES = {
     LIST_IN_PROGRESS: `${API_BASE_URL}/matches/in-progress`,
     GET: (id: string) => `${API_BASE_URL}/matches/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/matches/${id}`,
+    UPDATE_SCORE: (id: string) => `${API_BASE_URL}/matches/${id}/score`,
     DELETE: (id: string) => `${API_BASE_URL}/matches/${id}`,
     GET_BY_TOURNAMENT: (tournamentId: string) => `${API_BASE_URL}/matches/tournament/${tournamentId}`
   },

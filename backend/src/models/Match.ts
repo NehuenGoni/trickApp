@@ -85,6 +85,9 @@ const MatchSchema = new Schema<IMatch>(
   { collection: "matches", timestamps: true }
 );
 
+MatchSchema.index({ status: 1 });
+MatchSchema.index({ tournament: 1, bracketSlot: 1, status: 1 });
+
 const Match = mongoose.model<IMatch>("Match", MatchSchema, "matches");
 
 export default Match;
