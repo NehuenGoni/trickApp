@@ -20,11 +20,14 @@ export interface ITeam {
   name: string;
   registeredBy?: mongoose.Types.ObjectId;
   players: IPlayer[];
+  isDrawn?: boolean;
 }
 
 export interface IIndividualSignup {
-  userId: mongoose.Types.ObjectId;
+  signupId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
   name: string;
+  isGuest: boolean;
 }
 
 export interface IPlayerStat {
@@ -43,6 +46,7 @@ export interface ITournament extends Document {
   teamFormationMode: TeamFormationMode;
   teams: ITeam[];
   individualSignups: IIndividualSignup[];
+  draftPairOrder?: mongoose.Types.ObjectId[];
   matches: mongoose.Types.ObjectId[];
   playerStats: IPlayerStat[];
   pointsAwarded: boolean;
@@ -70,11 +74,18 @@ const TeamSchema = new Schema<ITeam>({
   name: { type: String, required: true },
   registeredBy: { type: Schema.Types.ObjectId, ref: "User", required: false },
   players: { type: [PlayerSchema], required: true },
+  isDrawn: { type: Boolean, default: false },
 });
 
 const IndividualSignupSchema = new Schema<IIndividualSignup>({
-  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  name: { type: String, required: true }
+  signupId: { type: Schema.Types.ObjectId, auto: true },
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: function (this: IIndividualSignup) { return !this.isGuest; }
+  },
+  name: { type: String, required: true },
+  isGuest: { type: Boolean, default: false }
 }, { _id: false });
 
 const PlayerStatSchema = new Schema<IPlayerStat>({
@@ -109,6 +120,7 @@ const tournamentSchema = new Schema<ITournament>(
     },
     teams: { type: [TeamSchema], default: [] },
     individualSignups: { type: [IndividualSignupSchema], default: [] },
+    draftPairOrder: { type: [Schema.Types.ObjectId], default: undefined },
     startDate: { type: Date, required: true },
     description: { type: String },
     matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],

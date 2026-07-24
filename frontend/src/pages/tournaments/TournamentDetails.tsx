@@ -64,11 +64,14 @@ interface Team {
     playerId?: string;
     isGuest?: boolean;
   }>;
+  isDrawn?: boolean;
 }
 
 interface Signup {
-  userId: string;
+  signupId: string;
+  userId?: string;
   name: string;
+  isGuest: boolean;
 }
 
 interface PlayerStat {
@@ -91,6 +94,7 @@ interface Tournament {
   createdBy: string;
   teams: Team[];
   individualSignups: Signup[];
+  draftPairOrder?: string[];
   matches: string[];
   playerStats: PlayerStat[];
   pointsAwarded: boolean;
@@ -154,6 +158,8 @@ const TournamentDetails = () => {
   const [creatorPlayerOptions, setCreatorPlayerOptions] = useState<UserOption[]>([]);
   const [creatorSelectedPlayers, setCreatorSelectedPlayers] = useState<UserOption[]>([]);
   const [searchingCreatorPlayer, setSearchingCreatorPlayer] = useState(false);
+  const [creatorGuestNameInput, setCreatorGuestNameInput] = useState('');
+  const [creatorGuestNames, setCreatorGuestNames] = useState<string[]>([]);
 
   const [startOpen, setStartOpen] = useState(false);
   const [startMode, setStartMode] = useState<'random' | 'manual' | null>(null);
@@ -163,6 +169,7 @@ const TournamentDetails = () => {
     QF3: ['', ''],
     QF4: ['', '']
   });
+  const [drawing, setDrawing] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -198,12 +205,29 @@ const TournamentDetails = () => {
     );
   })();
 
+  // Los equipos "fijos" son los precargados a mano por el creador (addGuestTeam).
+  // Los "sorteados" (isDrawn) salen de un /draw sobre el mismo pool de individualSignups,
+  // así que no se suman aparte o los jugadores quedarían contados dos veces.
+  const fixedTeams = tournament ? tournament.teams.filter((t) => !t.isDrawn) : [];
+  const drawnTeams = tournament ? tournament.teams.filter((t) => t.isDrawn) : [];
+  const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === 8;
+
+  const drawPairings: Array<[Team, Team]> = (() => {
+    if (!tournament?.draftPairOrder) return [];
+    const order = tournament.draftPairOrder;
+    const pairs: Array<[Team, Team]> = [];
+    for (let i = 0; i < order.length; i += 2) {
+      const a = tournament.teams.find((t) => t.teamId === order[i]);
+      const b = tournament.teams.find((t) => t.teamId === order[i + 1]);
+      if (a && b) pairs.push([a, b]);
+    }
+    return pairs;
+  })();
+
   const slotsFilled = (() => {
     if (!tournament) return 0;
     if (tournament.teamFormationMode === 'random') {
-      return (
-        tournament.individualSignups.length + tournament.teams.length * teamSize
-      );
+      return tournament.individualSignups.length + fixedTeams.length * teamSize;
     }
     return tournament.teams.length;
   })();
@@ -363,7 +387,7 @@ const TournamentDetails = () => {
   const handleCreatorRemoveTeam = async (teamId: string) => {
     if (!id) return;
     try {
-      await apiRequest(`${API_ROUTES.TOURNAMENTS.ADD_TEAM(id)}/${teamId}`, { method: 'DELETE' });
+      await apiRequest(API_ROUTES.TOURNAMENTS.REMOVE_TEAM(id, teamId), { method: 'DELETE' });
       setInfo('Equipo eliminado');
       fetchData();
     } catch (err) {
@@ -373,19 +397,23 @@ const TournamentDetails = () => {
   };
 
   const handleCreatorAddPlayer = async () => {
-    if (!id || creatorSelectedPlayers.length === 0) return;
+    if (!id) return;
+    if (creatorSelectedPlayers.length === 0 && creatorGuestNames.length === 0) return;
     setError('');
     try {
-      for (const player of creatorSelectedPlayers) {
-        await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
-          method: 'POST',
-          body: JSON.stringify({ userId: player._id })
-        });
-      }
+      await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
+        method: 'POST',
+        body: JSON.stringify({
+          userIds: creatorSelectedPlayers.map((p) => p._id),
+          guestNames: creatorGuestNames
+        })
+      });
       setCreatorAddPlayerOpen(false);
       setCreatorSelectedPlayers([]);
       setCreatorPlayerOptions([]);
-      setInfo(`${creatorSelectedPlayers.map((p) => p.username).join(', ')} inscripto${creatorSelectedPlayers.length > 1 ? 's' : ''}`);
+      setCreatorGuestNames([]);
+      setCreatorGuestNameInput('');
+      setInfo('Inscriptos agregados');
       fetchData();
     } catch (err) {
       const e = err as { message?: string };
@@ -393,15 +421,60 @@ const TournamentDetails = () => {
     }
   };
 
-  const handleCreatorRemovePlayer = async (userId: string) => {
+  const handleAddCreatorGuestName = () => {
+    const name = creatorGuestNameInput.trim();
+    if (!name) return;
+    setCreatorGuestNames([...creatorGuestNames, name]);
+    setCreatorGuestNameInput('');
+  };
+
+  const handleRemoveCreatorGuestName = (index: number) => {
+    setCreatorGuestNames(creatorGuestNames.filter((_, i) => i !== index));
+  };
+
+  const handleDraw = async () => {
+    if (!id) return;
+    setError('');
+    setDrawing(true);
+    try {
+      await apiRequest(API_ROUTES.TOURNAMENTS.DRAW(id), { method: 'POST' });
+      setInfo('Sorteo realizado');
+      await fetchData();
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e.message || 'Error al sortear el torneo');
+    } finally {
+      setDrawing(false);
+    }
+  };
+
+  const handleCreatorRemovePlayer = async (signupId: string) => {
     if (!id) return;
     try {
-      await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN_REMOVE(id, userId), { method: 'DELETE' });
+      await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN_REMOVE(id, signupId), { method: 'DELETE' });
       setInfo('Jugador quitado');
       fetchData();
     } catch (err) {
       const e = err as { message?: string };
       setError(e.message || 'Error al quitar el jugador');
+    }
+  };
+
+  const handleConfirmDraftStart = async () => {
+    if (!id) return;
+    setError('');
+    try {
+      await apiRequest(API_ROUTES.TOURNAMENTS.START(id), {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'random' })
+      });
+      setStartOpen(false);
+      setStartMode(null);
+      setInfo('Torneo iniciado');
+      fetchData();
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e.message || 'Error al iniciar el torneo');
     }
   };
 
@@ -629,26 +702,28 @@ const TournamentDetails = () => {
               {tournament.teamFormationMode === 'random' ? (
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Inscriptos ({tournament.individualSignups.length + tournament.teams.length * teamSize}/{totalSlots}):
+                    Inscriptos ({slotsFilled}/{totalSlots}):
                   </Typography>
-                  {tournament.individualSignups.length === 0 && tournament.teams.length === 0 ? (
+                  {tournament.individualSignups.length === 0 && fixedTeams.length === 0 ? (
                     <Typography variant="body2">Aún no hay inscriptos.</Typography>
                   ) : (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                       {tournament.individualSignups.map((s) => (
                         <Chip
-                          key={s.userId}
+                          key={s.signupId}
                           size="small"
-                          label={s.name}
-                          onDelete={isCreator ? () => handleCreatorRemovePlayer(s.userId) : undefined}
+                          variant={s.isGuest ? 'outlined' : 'filled'}
+                          label={s.isGuest ? `${s.name} (invitado)` : s.name}
+                          onDelete={isCreator ? () => handleCreatorRemovePlayer(s.signupId) : undefined}
                         />
                       ))}
-                      {tournament.teams.map((t) =>
+                      {fixedTeams.map((t) =>
                         t.players.map((p, i) => (
                           <Chip
                             key={p.playerId || `${t.teamId}-${i}`}
                             size="small"
-                            label={p.name}
+                            variant={p.isGuest ? 'outlined' : 'filled'}
+                            label={p.isGuest ? `${p.name} (invitado)` : p.name}
                           />
                         ))
                       )}
@@ -707,7 +782,7 @@ const TournamentDetails = () => {
                     Agregar jugador
                   </Button>
                 )}
-                {isCreator && slotsFilled < totalSlots && (
+                {isCreator && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
                   <Button variant="outlined" onClick={() => setGuestOpen(true)}>
                     Agregar invitados
                   </Button>
@@ -723,6 +798,62 @@ const TournamentDetails = () => {
                   </Button>
                 )}
               </Box>
+            </Paper>
+          )}
+
+          {tournament.status === 'upcoming' && isCreator && cupCompletos && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Sorteo
+              </Typography>
+              {!hasDraft ? (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Sorteá los equipos y los cruces de cuartos. Vas a poder ver el resultado
+                    y volver a sortear las veces que quieras antes de iniciar el torneo.
+                  </Typography>
+                  <Button variant="contained" disabled={drawing} onClick={handleDraw}>
+                    {drawing ? 'Sorteando...' : 'Sortear equipos y cruces'}
+                  </Button>
+                </Box>
+              ) : (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Equipos sorteados:
+                  </Typography>
+                  {tournament.teams.map((t) => (
+                    <Paper key={t.teamId} variant="outlined" sx={{ p: 1, my: 1 }}>
+                      <Typography variant="subtitle2">
+                        {t.name}
+                        {t.isDrawn ? '' : ' (fijo)'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {t.players
+                          .map((p) => (p.isGuest ? `${p.name} (invitado)` : p.name))
+                          .join(', ')}
+                      </Typography>
+                    </Paper>
+                  ))}
+
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+                    Cruces de cuartos:
+                  </Typography>
+                  {drawPairings.map(([a, b], i) => (
+                    <Typography key={a.teamId} variant="body2" sx={{ mb: 0.5 }}>
+                      QF{i + 1}: {a.name} vs {b.name}
+                    </Typography>
+                  ))}
+
+                  <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+                    <Button variant="outlined" disabled={drawing} onClick={handleDraw}>
+                      {drawing ? 'Sorteando...' : 'Re-sortear'}
+                    </Button>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    Usá el botón "Iniciar torneo" de arriba cuando estés conforme con el sorteo.
+                  </Typography>
+                </Box>
+              )}
             </Paper>
           )}
 
@@ -936,14 +1067,22 @@ const TournamentDetails = () => {
 
         <Dialog
           open={creatorAddPlayerOpen}
-          onClose={() => { setCreatorAddPlayerOpen(false); setCreatorSelectedPlayers([]); setCreatorPlayerOptions([]); }}
+          onClose={() => {
+            setCreatorAddPlayerOpen(false);
+            setCreatorSelectedPlayers([]);
+            setCreatorPlayerOptions([]);
+            setCreatorGuestNames([]);
+            setCreatorGuestNameInput('');
+          }}
           fullWidth
           maxWidth="sm"
         >
           <DialogTitle>Agregar jugadores al torneo</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
-              Podés seleccionar varios jugadores a la vez.
+              Podés seleccionar varios jugadores registrados y agregar invitados sueltos.
+              Al sortear, los invitados se agrupan entre ellos antes de completar equipos
+              con jugadores registrados.
             </Typography>
             <Autocomplete
               multiple
@@ -962,13 +1101,56 @@ const TournamentDetails = () => {
                 />
               )}
             />
+            <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Nombre del invitado"
+                value={creatorGuestNameInput}
+                onChange={(e) => setCreatorGuestNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCreatorGuestName();
+                  }
+                }}
+              />
+              <Button variant="outlined" onClick={handleAddCreatorGuestName}>
+                Agregar
+              </Button>
+            </Box>
+            {creatorGuestNames.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                {creatorGuestNames.map((name, i) => (
+                  <Chip
+                    key={`${name}-${i}`}
+                    size="small"
+                    variant="outlined"
+                    label={`${name} (invitado)`}
+                    onDelete={() => handleRemoveCreatorGuestName(i)}
+                  />
+                ))}
+              </Box>
+            )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => { setCreatorAddPlayerOpen(false); setCreatorSelectedPlayers([]); setCreatorPlayerOptions([]); }}>
+            <Button
+              onClick={() => {
+                setCreatorAddPlayerOpen(false);
+                setCreatorSelectedPlayers([]);
+                setCreatorPlayerOptions([]);
+                setCreatorGuestNames([]);
+                setCreatorGuestNameInput('');
+              }}
+            >
               Cancelar
             </Button>
-            <Button variant="contained" disabled={creatorSelectedPlayers.length === 0} onClick={handleCreatorAddPlayer}>
-              Agregar ({creatorSelectedPlayers.length})
+            <Button
+              variant="contained"
+              disabled={creatorSelectedPlayers.length === 0 && creatorGuestNames.length === 0}
+              onClick={handleCreatorAddPlayer}
+            >
+              Agregar ({creatorSelectedPlayers.length + creatorGuestNames.length})
             </Button>
           </DialogActions>
         </Dialog>
@@ -984,7 +1166,31 @@ const TournamentDetails = () => {
         >
           <DialogTitle>Iniciar torneo</DialogTitle>
           <DialogContent>
-            {!startMode && (
+            {!startMode && hasDraft && (
+              <Box>
+                <Typography variant="body2" sx={{ mb: 2 }}>
+                  Ya sorteaste equipos y cruces. Revisá el resumen y confirmá para iniciar
+                  el torneo.
+                </Typography>
+                {tournament.teams.map((t) => (
+                  <Typography key={t.teamId} variant="body2" color="text.secondary">
+                    {t.name}: {t.players.map((p) => p.name).join(', ')}
+                  </Typography>
+                ))}
+                <Typography variant="body2" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>
+                  Cruces de cuartos:
+                </Typography>
+                {drawPairings.map(([a, b], i) => (
+                  <Typography key={a.teamId} variant="body2">
+                    QF{i + 1}: {a.name} vs {b.name}
+                  </Typography>
+                ))}
+                <Button sx={{ mt: 2 }} size="small" onClick={() => setStartMode('manual')}>
+                  Elegir cuartos manualmente en su lugar
+                </Button>
+              </Box>
+            )}
+            {!startMode && !hasDraft && (
               <Box sx={{ display: 'flex', gap: 2, mt: 1, flexDirection: 'column' }}>
                 <Button
                   variant="contained"
@@ -1064,6 +1270,11 @@ const TournamentDetails = () => {
             >
               Cancelar
             </Button>
+            {!startMode && hasDraft && (
+              <Button variant="contained" onClick={handleConfirmDraftStart}>
+                Confirmar
+              </Button>
+            )}
             {startMode && (
               <Button variant="contained" onClick={handleStart}>
                 Confirmar

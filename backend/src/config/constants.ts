@@ -1,5 +1,13 @@
 export const FRIENDLY_MATCHES_ID = 'friendly_matches';
 
+export const ROLES = {
+  USER: 'user',
+  ADMIN: 'admin',
+  SUPERADMIN: 'superadmin'
+} as const;
+
+export const ADMIN_ROLES = [ROLES.ADMIN, ROLES.SUPERADMIN];
+
 export const MATCH_TYPES = {
   FRIENDLY: 'friendly',
   TOURNAMENT: 'tournament'

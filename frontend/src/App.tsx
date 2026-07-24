@@ -13,7 +13,11 @@ import TournamentList from './pages/tournaments/TournamentList';
 import CreateTournament from './pages/tournaments/CreateTournament';
 import TournamentDetails from './pages/tournaments/TournamentDetails';
 import PrivateRoute from './components/PrivateRoute';
+import AdminRoute from './components/AdminRoute';
 import Stats from './pages/stats/Stats';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminTournaments from './pages/admin/AdminTournaments';
 
 
 function App(): JSX.Element {
@@ -69,6 +73,24 @@ function App(): JSX.Element {
           } />
 
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
+
+          <Route path="/admin" element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          } />
+
+          <Route path="/admin/tournaments" element={
+            <AdminRoute>
+              <AdminTournaments />
+            </AdminRoute>
+          } />
+
+          <Route path="/admin/users" element={
+            <AdminRoute superAdminOnly>
+              <AdminUsers />
+            </AdminRoute>
+          } />
         </Routes>
       </Router>
     </ThemeProvider>

@@ -9,6 +9,7 @@ import {
   createTeamInTournament,
   updateTeam,
   removeTeam,
+  drawTournament,
   startTournament,
   registerToTournament,
   unregisterFromTournament,
@@ -17,6 +18,7 @@ import {
   creatorAddSignup,
   creatorRemoveSignup
 } from "../controllers/tournament.controller";
+import { getTournamentLive } from "../controllers/live.controller";
 import authMiddleware from "../middlewares/authMiddleware";
 
 const router = express.Router();
@@ -29,12 +31,13 @@ router.get("/:id/leaderboard", getTournamentLeaderboard);
 router.put("/:id", authMiddleware, updateTournament);
 router.delete("/:id", authMiddleware, deleteTournament);
 
+router.post("/:id/draw", authMiddleware, drawTournament);
 router.post("/:id/start", authMiddleware, startTournament);
 router.post("/:id/register", authMiddleware, registerToTournament);
 router.delete("/:id/register", authMiddleware, unregisterFromTournament);
 router.post("/:id/teams/guests", authMiddleware, addGuestTeam);
 router.post("/:id/signups/admin", authMiddleware, creatorAddSignup);
-router.delete("/:id/signups/admin/:userId", authMiddleware, creatorRemoveSignup);
+router.delete("/:id/signups/admin/:signupId", authMiddleware, creatorRemoveSignup);
 
 router.post("/:tournamentId/teams", authMiddleware, createTeamInTournament);
 router.put("/:tournamentId/teams/:teamId", authMiddleware, updateTeam);

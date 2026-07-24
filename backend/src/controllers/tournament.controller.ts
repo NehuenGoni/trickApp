@@ -6,7 +6,8 @@ import TournamentModel, {
   ITournament,
   ITeam,
   IPlayer,
-  IPlayerStat
+  IPlayerStat,
+  IIndividualSignup
 } from "../models/Tournament";
 import {
   TOURNAMENT_TYPES,
@@ -49,12 +50,49 @@ const isUserAlreadyInTournament = (
   userId: string
 ): boolean => {
   const inSignups = tournament.individualSignups.some(
-    (s) => s.userId.toString() === userId
+    (s) => s.userId && s.userId.toString() === userId
   );
   if (inSignups) return true;
   return tournament.teams.some((t) =>
     t.players.some((p) => p.playerId && p.playerId.toString() === userId)
   );
+};
+
+/**
+ * Arma los equipos faltantes a partir de los inscriptos individuales, agrupando
+ * primero a los invitados entre ellos. El corte en bloques es secuencial, así que
+ * los invitados barajados van al frente de la lista: los primeros equipos salen
+ * 100% invitados, a lo sumo uno queda mixto (el que absorbe el resto de la
+ * división) y ningún equipo posterior lleva invitados.
+ */
+export const buildDrawnTeams = (
+  signups: IIndividualSignup[],
+  expectedSize: number,
+  teamsNeeded: number,
+  existingTeamsCount: number
+): ITeam[] => {
+  const guests = signups.filter((s) => s.isGuest);
+  const registered = signups.filter((s) => !s.isGuest);
+  const ordered = [...shuffle(guests), ...shuffle(registered)];
+
+  const newTeams: ITeam[] = [];
+  let cursor = 0;
+  for (let i = 0; i < teamsNeeded; i++) {
+    const players = ordered.slice(cursor, cursor + expectedSize);
+    cursor += expectedSize;
+    const teamNumber = existingTeamsCount + newTeams.length + 1;
+    newTeams.push({
+      teamId: new mongoose.Types.ObjectId(),
+      name: `Equipo ${teamNumber}`,
+      players: players.map((s) => ({
+        playerId: s.userId,
+        name: s.name,
+        isGuest: s.isGuest
+      })),
+      isDrawn: true
+    });
+  }
+  return newTeams;
 };
 
 export const createTournament = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -432,8 +470,10 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
       {
         $push: {
           individualSignups: {
+            signupId: new mongoose.Types.ObjectId(),
             userId: new mongoose.Types.ObjectId(userId),
-            name: userDoc.username
+            name: userDoc.username,
+            isGuest: false
           }
         }
       }
@@ -481,7 +521,7 @@ export const unregisterFromTournament = async (req: AuthRequest, res: Response):
 
     const before = tournament.individualSignups.length;
     tournament.individualSignups = tournament.individualSignups.filter(
-      (s) => s.userId.toString() !== userId
+      (s) => !s.userId || s.userId.toString() !== userId
     );
     if (tournament.individualSignups.length === before) {
       return void res.status(404).json({ message: "No estás inscripto en este torneo" });
@@ -530,7 +570,8 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
       }
     } else {
       const target = TOURNAMENT_TEAMS_COUNT * expectedSize;
-      const taken = tournament.individualSignups.length + tournament.teams.length * expectedSize;
+      const fixedTeams = tournament.teams.filter((t) => !t.isDrawn).length;
+      const taken = tournament.individualSignups.length + fixedTeams * expectedSize;
       if (taken + members.length > target) {
         return void res.status(400).json({
           message: "Agregar este equipo excede los cupos del torneo"
@@ -560,7 +601,11 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
 export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { userId } = req.body as { userId?: string };
+    const { userId, userIds, guestNames } = req.body as {
+      userId?: string;
+      userIds?: string[];
+      guestNames?: string[];
+    };
 
     const tournament = await TournamentModel.findById(id);
     if (!tournament) return void res.status(404).json({ message: "Torneo no encontrado" });
@@ -575,36 +620,61 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
         message: "Este endpoint solo aplica en modo de equipos aleatorios. Para el modo 'user-formed' usá POST /:tournamentId/teams"
       });
     }
-    if (!userId) return void res.status(400).json({ message: "Falta userId" });
 
-    const userDoc = await User.findById(userId);
-    if (!userDoc) return void res.status(404).json({ message: "Usuario no encontrado" });
+    // Compatibilidad con el body legado { userId } de un solo usuario.
+    const allUserIds = [...(userIds ?? [])];
+    if (userId) allUserIds.push(userId);
+    const allGuestNames = (guestNames ?? []).map((n) => n.trim()).filter(Boolean);
+
+    if (allUserIds.length === 0 && allGuestNames.length === 0) {
+      return void res.status(400).json({ message: "Falta userId, userIds o guestNames" });
+    }
+
+    const uniqueUserIds = Array.from(new Set(allUserIds));
+    const users = await User.find({ _id: { $in: uniqueUserIds } });
+    if (users.length !== uniqueUserIds.length) {
+      return void res.status(404).json({ message: "Algún usuario no existe" });
+    }
+
+    const alreadyIn = new Set(
+      tournament.individualSignups
+        .filter((s) => s.userId)
+        .map((s) => s.userId!.toString())
+    );
+    const duplicate = uniqueUserIds.find((uid) => alreadyIn.has(uid));
+    if (duplicate) {
+      return void res.status(409).json({ message: "Un usuario ya está inscripto" });
+    }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
     const targetSignups = TOURNAMENT_TEAMS_COUNT * expectedSize;
-
-    const result = await TournamentModel.updateOne(
-      {
-        _id: tournament._id,
-        status: "upcoming",
-        $expr: { $lt: [{ $size: "$individualSignups" }, targetSignups] },
-        "individualSignups.userId": { $ne: new mongoose.Types.ObjectId(userId) }
-      },
-      {
-        $push: {
-          individualSignups: {
-            userId: new mongoose.Types.ObjectId(userId),
-            name: userDoc.username
-          }
-        }
-      }
-    );
-    if (result.modifiedCount === 0) {
-      return void res.status(409).json({
-        message: "No se pudo inscribir (cupos llenos o usuario ya inscripto)"
+    const incoming = uniqueUserIds.length + allGuestNames.length;
+    if (tournament.individualSignups.length + incoming > targetSignups) {
+      return void res.status(400).json({
+        message: `Cupos insuficientes: quedan ${targetSignups - tournament.individualSignups.length} lugares`
       });
     }
-    res.status(201).json({ message: `${userDoc.username} inscripto` });
+
+    const newSignups: IIndividualSignup[] = [
+      ...users.map((u) => ({
+        signupId: new mongoose.Types.ObjectId(),
+        userId: u._id as mongoose.Types.ObjectId,
+        name: u.username,
+        isGuest: false
+      })),
+      ...allGuestNames.map((name) => ({
+        signupId: new mongoose.Types.ObjectId(),
+        name,
+        isGuest: true
+      }))
+    ];
+
+    tournament.individualSignups.push(...newSignups);
+    await tournament.save();
+    res.status(201).json({
+      message: `${newSignups.length} inscripto(s) agregado(s)`,
+      signups: newSignups
+    });
   } catch (error) {
     res.status(500).json({ message: "Error al inscribir jugador", error });
   }
@@ -612,7 +682,7 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
 
 export const creatorRemoveSignup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id, userId } = req.params;
+    const { id, signupId } = req.params;
 
     const tournament = await TournamentModel.findById(id);
     if (!tournament) return void res.status(404).json({ message: "Torneo no encontrado" });
@@ -630,10 +700,10 @@ export const creatorRemoveSignup = async (req: AuthRequest, res: Response): Prom
 
     const before = tournament.individualSignups.length;
     tournament.individualSignups = tournament.individualSignups.filter(
-      (s) => s.userId.toString() !== userId
+      (s) => s.signupId.toString() !== signupId
     );
     if (tournament.individualSignups.length === before) {
-      return void res.status(404).json({ message: "El usuario no estaba inscripto" });
+      return void res.status(404).json({ message: "El inscripto no existe" });
     }
     await tournament.save();
     res.status(200).json({ message: "Jugador quitado del torneo" });
@@ -683,6 +753,76 @@ const teamToMatchTeam = (team: ITeam) => ({
   }))
 });
 
+/**
+ * Sortea (o re-sortea) el torneo sin iniciarlo: arma los equipos faltantes en modo
+ * aleatorio y guarda un orden de cruces tentativo (`draftPairOrder`) para preview.
+ * Descarta cualquier sorteo previo (equipos con `isDrawn`) pero preserva los
+ * equipos que el creador haya precargado a mano. `individualSignups` NO se vacía:
+ * es la fuente de verdad que permite re-sortear las veces que haga falta.
+ */
+export const drawTournament = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const tournament = await TournamentModel.findById(id);
+    if (!tournament) {
+      return void res.status(404).json({ message: "Torneo no encontrado" });
+    }
+    if (tournament.createdBy.toString() !== req.user) {
+      return void res.status(403).json({ message: "Solo el creador puede sortear el torneo" });
+    }
+    if (tournament.status !== "upcoming") {
+      return void res.status(400).json({ message: "El torneo ya inició o finalizó" });
+    }
+
+    const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
+
+    if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
+      const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
+      const filledFromTeams = tournament.teams.length * expectedSize;
+      const filledFromSignups = tournament.individualSignups.length;
+      if (filledFromTeams + filledFromSignups !== totalSlots) {
+        return void res.status(400).json({
+          message: `Faltan jugadores: ${filledFromTeams + filledFromSignups}/${totalSlots}`
+        });
+      }
+      const teamsNeeded = TOURNAMENT_TEAMS_COUNT - tournament.teams.length;
+      const drawnTeams = buildDrawnTeams(
+        tournament.individualSignups,
+        expectedSize,
+        teamsNeeded,
+        tournament.teams.length
+      );
+      tournament.teams.push(...drawnTeams);
+    } else {
+      if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
+        return void res.status(400).json({
+          message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
+        });
+      }
+    }
+
+    const draftPairOrder = shuffle(tournament.teams).map((t) => t.teamId);
+    tournament.draftPairOrder = draftPairOrder;
+    await tournament.save();
+
+    const pairOrderTeams = draftPairOrder.map(
+      (tid) => tournament.teams.find((t) => t.teamId.toString() === tid.toString())!
+    );
+    const pairings = ([BRACKET_SLOTS.QF1, BRACKET_SLOTS.QF2, BRACKET_SLOTS.QF3, BRACKET_SLOTS.QF4] as const).map(
+      (slot, i) => ({
+        slot,
+        teamIds: [pairOrderTeams[i * 2].teamId, pairOrderTeams[i * 2 + 1].teamId]
+      })
+    );
+
+    res.status(200).json({ teams: tournament.teams, pairings });
+  } catch (error) {
+    res.status(500).json({ message: "Error al sortear el torneo", error });
+  }
+};
+
 export const startTournament = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -707,44 +847,53 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    const hasDraft =
+      Array.isArray(tournament.draftPairOrder) &&
+      tournament.draftPairOrder.length === TOURNAMENT_TEAMS_COUNT;
 
-    if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
-      const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
-      const filledFromTeams = tournament.teams.length * expectedSize;
-      const filledFromSignups = tournament.individualSignups.length;
-      if (filledFromTeams + filledFromSignups !== totalSlots) {
-        return void res.status(400).json({
-          message: `Faltan jugadores: ${filledFromTeams + filledFromSignups}/${totalSlots}`
-        });
-      }
-      const shuffledSignups = shuffle(tournament.individualSignups);
-      const remainingTeamsNeeded = TOURNAMENT_TEAMS_COUNT - tournament.teams.length;
-      let cursor = 0;
-      for (let i = 0; i < remainingTeamsNeeded; i++) {
-        const players = shuffledSignups.slice(cursor, cursor + expectedSize);
-        cursor += expectedSize;
-        const teamNumber = tournament.teams.length + 1;
-        tournament.teams.push({
-          teamId: new mongoose.Types.ObjectId(),
-          name: `Equipo ${teamNumber}`,
-          players: players.map((s) => ({
-            playerId: s.userId,
-            name: s.name,
-            isGuest: false
-          }))
-        });
-      }
-      tournament.individualSignups = [];
-    } else {
-      if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
-        return void res.status(400).json({
-          message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
-        });
+    // Si ya se sorteó desde /draw, los equipos están armados y no hay que tocar nada acá.
+    // Si no (alguien inicia sin pasar por el preview), se arma inline como antes.
+    if (!hasDraft) {
+      if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
+        tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
+        const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
+        const filledFromTeams = tournament.teams.length * expectedSize;
+        const filledFromSignups = tournament.individualSignups.length;
+        if (filledFromTeams + filledFromSignups !== totalSlots) {
+          return void res.status(400).json({
+            message: `Faltan jugadores: ${filledFromTeams + filledFromSignups}/${totalSlots}`
+          });
+        }
+        const teamsNeeded = TOURNAMENT_TEAMS_COUNT - tournament.teams.length;
+        const drawnTeams = buildDrawnTeams(
+          tournament.individualSignups,
+          expectedSize,
+          teamsNeeded,
+          tournament.teams.length
+        );
+        tournament.teams.push(...drawnTeams);
+      } else {
+        if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
+          return void res.status(400).json({
+            message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
+          });
+        }
       }
     }
 
     let pairOrder: ITeam[];
-    if (mode === "random") {
+    if (mode === "random" && hasDraft) {
+      pairOrder = tournament
+        .draftPairOrder!.map((tid) =>
+          tournament.teams.find((t) => t.teamId.toString() === tid.toString())
+        )
+        .filter((t): t is ITeam => !!t);
+      if (pairOrder.length !== TOURNAMENT_TEAMS_COUNT) {
+        return void res.status(400).json({
+          message: "El sorteo guardado no coincide con los equipos actuales, volvé a sortear"
+        });
+      }
+    } else if (mode === "random") {
       pairOrder = shuffle(tournament.teams);
     } else {
       if (!Array.isArray(pairings) || pairings.length !== 4) {
@@ -832,6 +981,8 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     }
 
     tournament.matches = Array.from(slotToMatchId.values());
+    tournament.individualSignups = [];
+    tournament.draftPairOrder = undefined;
     tournament.status = "in_progress";
     await tournament.save();
 
@@ -914,6 +1065,40 @@ export const computePlayerStats = async (
   return stats;
 };
 
+/** Suma al ranking global los puntos de `playerStats`. No persiste el torneo. */
+export const awardTournamentPoints = async (tournament: ITournament): Promise<void> => {
+  if (tournament.pointsAwarded) return;
+  for (const s of tournament.playerStats) {
+    if (s.isGuest || !s.playerId) continue;
+    if (s.points <= 0) continue;
+    await User.updateOne({ _id: s.playerId }, { $inc: { totalPoints: s.points } });
+  }
+  tournament.pointsAwarded = true;
+};
+
+/**
+ * Descuenta del ranking global los puntos que este torneo había otorgado.
+ * Usa un pipeline de update para que `totalPoints` nunca quede negativo.
+ * No persiste el torneo.
+ */
+export const revertTournamentPoints = async (tournament: ITournament): Promise<void> => {
+  if (!tournament.pointsAwarded) return;
+  for (const s of tournament.playerStats) {
+    if (s.isGuest || !s.playerId) continue;
+    if (s.points <= 0) continue;
+    await User.updateOne({ _id: s.playerId }, [
+      {
+        $set: {
+          totalPoints: {
+            $max: [0, { $subtract: [{ $ifNull: ["$totalPoints", 0] }, s.points] }]
+          }
+        }
+      }
+    ]);
+  }
+  tournament.pointsAwarded = false;
+};
+
 export const closeTournament = async (
   tournamentId: mongoose.Types.ObjectId | string
 ): Promise<void> => {
@@ -922,15 +1107,9 @@ export const closeTournament = async (
   if (tournament.pointsAwarded) return;
   if (tournament.status === "completed") return;
 
-  const stats = await computePlayerStats(tournament);
-  tournament.playerStats = stats;
+  tournament.playerStats = await computePlayerStats(tournament);
   tournament.status = "completed";
 
-  for (const s of stats) {
-    if (s.isGuest || !s.playerId) continue;
-    if (s.points <= 0) continue;
-    await User.updateOne({ _id: s.playerId }, { $inc: { totalPoints: s.points } });
-  }
-  tournament.pointsAwarded = true;
+  await awardTournamentPoints(tournament);
   await tournament.save();
 };

@@ -32,12 +32,28 @@ const API_ROUTES = {
     UPDATE: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
     ADD_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams`,
+    REMOVE_TEAM: (id: string, teamId: string) => `${API_BASE_URL}/tournaments/${id}/teams/${teamId}`,
+    DRAW: (id: string) => `${API_BASE_URL}/tournaments/${id}/draw`,
     START: (id: string) => `${API_BASE_URL}/tournaments/${id}/start`,
     REGISTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/register`,
     ADD_GUEST_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams/guests`,
     LEADERBOARD: (id: string) => `${API_BASE_URL}/tournaments/${id}/leaderboard`,
     SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
-    SIGNUP_ADMIN_REMOVE: (id: string, userId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${userId}`,
+    SIGNUP_ADMIN_REMOVE: (id: string, signupId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${signupId}`,
+  },
+  ADMIN: {
+    STATS: `${API_BASE_URL}/admin/stats`,
+    USERS: `${API_BASE_URL}/admin/users`,
+    USER: (id: string) => `${API_BASE_URL}/admin/users/${id}`,
+    USER_PASSWORD: (id: string) => `${API_BASE_URL}/admin/users/${id}/password`,
+    USER_POINTS: (id: string) => `${API_BASE_URL}/admin/users/${id}/points`,
+    TOURNAMENTS: `${API_BASE_URL}/admin/tournaments`,
+    TOURNAMENT: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}`,
+    TOURNAMENT_RESET: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/reset`,
+    TOURNAMENT_CLOSE: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/close`,
+    TOURNAMENT_RECALCULATE: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/recalculate`,
+    TOURNAMENT_MATCHES: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/matches`,
+    MATCH: (id: string) => `${API_BASE_URL}/admin/matches/${id}`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
@@ -99,7 +115,9 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         errorMessage = parsedData.message;
       }
 
-      if (errorMessage === "Token inválido") {
+      // 401 = sesión inválida o revocada (por ejemplo, tras un reset de contraseña).
+      // 403 es falta de permisos: ahí la sesión sigue siendo válida y el error se muestra.
+      if (errorMessage === "Token inválido" || response.status === 401) {
         localStorage.removeItem("token");
         window.location.href = "/login";
         return;

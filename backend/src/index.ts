@@ -7,6 +7,7 @@ import tournamentRoutes from "./routes/tournament.routes"
 import matchRoutes from "./routes/match.routes"
 import leagueRoutes from "./routes/league.routes"
 import userRoutes from "./routes/user.routes";
+import adminRoutes from "./routes/admin.routes";
 
 dotenv.config();
 
@@ -26,6 +27,9 @@ app.use("/auth", authRoutes);
 
 // Users
 app.use("/users", userRoutes);
+
+// Panel de administración
+app.use("/admin", adminRoutes);
 
 // Test
 app.get("/", (req, res) => {
