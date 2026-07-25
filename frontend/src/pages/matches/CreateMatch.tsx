@@ -115,6 +115,7 @@ const CreateMatch = () => {
   const handleTypeChange = (event: SelectChangeEvent) => {
     setMatchType(event.target.value);
     setSelectedPlayers([]);
+    fetchUserData();
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -139,7 +140,7 @@ const CreateMatch = () => {
   };
 
   const handleRemovePlayer = (playerId: string) => {
-    setSelectedPlayers(selectedPlayers.filter(player => player.isRegistered && player._id !== playerId));
+    setSelectedPlayers(selectedPlayers.filter(player => (player.isRegistered && (player._id !== playerId)) || (!player.isRegistered && player.guestId !== playerId)));
   };
 
   const handleRegisteredPlayerSelection = (userIds: string[]) => {
@@ -173,7 +174,7 @@ const CreateMatch = () => {
   const getMaxPlayers = () => {
     return matchType === 'pairs' ? 4 : 6; 
   };
-
+  
   const handleCreateMatch = async () => {
     if (selectedPlayers.length < getMaxPlayers()) {
       setError('Selecciona la cantidad correcta de jugadores');
@@ -196,6 +197,7 @@ const CreateMatch = () => {
               if (player.isRegistered) {
                 return {
                   playerId: player._id,
+                  username: player.username,
                   isGuest: false
                 };
               }
@@ -288,7 +290,7 @@ const CreateMatch = () => {
                     <ListItem key={player.isRegistered ? player._id : player.guestId}>
                       <ListItemText 
                         primary={player.username}
-                        secondary={'isGuest' in player ? 'Invitado' : 'Registrado'}
+                        secondary={player.isRegistered ? 'Registrado' : 'Invitado'}
                       />
                       <ListItemSecondaryAction>
                         <IconButton 

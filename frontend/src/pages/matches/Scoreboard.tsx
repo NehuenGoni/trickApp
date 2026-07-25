@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Container,
   Typography,
@@ -19,6 +19,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { useWakeLock } from '../../hooks/useWakeLock';
+import { MAX_SCORE, getScoreStage, getDisplayScore } from '../../utils/truco';
 
 interface Team {
   teamId: string;
@@ -41,7 +42,10 @@ interface Match {
   createdAt: string;
 }
 
-const MAX_SCORE = 30;
+// Espectadores en /live/:id sondean el estado cada ~2.5s (ver useLiveTournament),
+// así que bajar este debounce reduce la latencia total percibida en la pantalla
+// de transmisión (antes: 0.8s + poll ≈ 3.3s peor caso; ahora ≈ 2.9s).
+const DEBOUNCE_MS = 400;
 
 const Scoreboard = () => {
   const { matchId } = useParams();
@@ -52,6 +56,11 @@ const Scoreboard = () => {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
 
+  // Ref siempre sincronizado con el último estado del match, para que el
+  // debounce/flush pueda leer el valor más reciente sin depender del closure.
+  const matchRef = useRef<Match | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useWakeLock(match?.status === 'in_progress');
 
   const fetchMatch = useCallback ( async () => {
@@ -61,13 +70,14 @@ const Scoreboard = () => {
     }
 
     try {
-      const matchData = await apiRequest(API_ROUTES.MATCHES.GET(matchId));  console.log(matchData)
+      const matchData = await apiRequest(API_ROUTES.MATCHES.GET(matchId));
 
       if (!matchData || !Array.isArray(matchData.teams)) {
         throw new Error('Datos del partido inválidos');
       }
-      
+
       setMatch(matchData);
+      matchRef.current = matchData;
 
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setUserLogged(data.user._id)
@@ -94,44 +104,119 @@ const Scoreboard = () => {
     fetchMatch();
   }, [fetchMatch]);
 
-  const handleScoreChange = async (teamIndex: number, change: number) => {
-    if (!match) return;
+  // Cancela el debounce pendiente (si existe) y sincroniza el score actual
+  // con el backend vía el endpoint liviano de score. Se usa tanto para el
+  // guardado diferido normal como para los "flush" forzados (salir, ocultar
+  // pestaña, desmontar).
+  const flushPendingScore = useCallback(async () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
 
-    const newScore = match.teams[teamIndex].score + change;
-    if (newScore < 0 || newScore > MAX_SCORE) return;
+    const current = matchRef.current;
+    if (!current || current.status !== 'in_progress') return;
 
     try {
-      const updatedTeams = [...match.teams];
-      updatedTeams[teamIndex] = {
-        ...updatedTeams[teamIndex],
-        score: newScore
-      };
+      await apiRequest(API_ROUTES.MATCHES.UPDATE_SCORE(current._id), {
+        method: 'PATCH',
+        body: JSON.stringify({
+          scores: current.teams.map(t => ({ teamId: t.teamId, score: t.score }))
+        })
+      });
+    } catch (err) {
+      setError('Error al sincronizar la puntuación');
+      // Resincroniza el estado local con lo que realmente quedó guardado.
+      fetchMatch();
+    }
+  }, [fetchMatch]);
 
-      const updatedMatch = {
-        ...match,
-        teams: updatedTeams
-      };
-
-      if (newScore === MAX_SCORE) {
-        updatedMatch.status = "finished";
-        updatedMatch.winner = updatedMatch.teams[teamIndex].teamId;
+  // Cleanup: al desmontar, si quedó un cambio de score sin sincronizar, se
+  // fuerza el guardado. También cubre el caso de cambiar de pestaña/app
+  // (visibilitychange/pagehide), relevante porque la pantalla se mantiene
+  // encendida con useWakeLock mientras el partido está en curso.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushPendingScore();
       }
+    };
 
-      const response = await apiRequest(API_ROUTES.MATCHES.UPDATE(match._id), {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', flushPendingScore);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', flushPendingScore);
+      flushPendingScore();
+    };
+  }, [flushPendingScore]);
+
+  const finalizeMatch = async (updatedMatch: Match) => {
+    try {
+      const response = await apiRequest(API_ROUTES.MATCHES.UPDATE(updatedMatch._id), {
         method: 'PUT',
         body: JSON.stringify(updatedMatch)
       });
-
       setMatch(response);
+      matchRef.current = response;
     } catch (err) {
       setError('Error al actualizar la puntuación');
+      fetchMatch();
     }
   };
 
+  const handleScoreChange = (teamIndex: number, change: number) => {
+    const current = matchRef.current;
+    if (!current) return;
+
+    const newScore = current.teams[teamIndex].score + change;
+    if (newScore < 0 || newScore > MAX_SCORE) return;
+
+    const updatedTeams = [...current.teams];
+    updatedTeams[teamIndex] = {
+      ...updatedTeams[teamIndex],
+      score: newScore
+    };
+
+    const updatedMatch: Match = {
+      ...current,
+      teams: updatedTeams
+    };
+
+    if (newScore === MAX_SCORE) {
+      updatedMatch.status = "finished";
+      updatedMatch.winner = updatedMatch.teams[teamIndex].teamId;
+    }
+
+    // Optimistic update: la UI refleja el punto al instante, sin esperar al backend.
+    setMatch(updatedMatch);
+    matchRef.current = updatedMatch;
+
+    if (newScore === MAX_SCORE) {
+      // La finalización nunca se difiere: se cancela cualquier debounce
+      // pendiente y se guarda de inmediato (dispara avance de bracket, etc.).
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      finalizeMatch(updatedMatch);
+      return;
+    }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      flushPendingScore();
+    }, DEBOUNCE_MS);
+  };
+
   const handleExit = async () => {
-    console.log(match?.tournament )
-    if (match && match?.tournament === 'friendly_matches' && match.status === 'in_progress') { 
+    if (match && match?.tournament === 'friendly_matches' && match.status === 'in_progress') {
       await handleDeleteAndExit();
+    } else {
+      await flushPendingScore();
     }
     navigate('/dashboard');
   };
@@ -139,6 +224,11 @@ const Scoreboard = () => {
   const handleSaveAndExit = async () => {
     try {
       if (!matchId || !match) return;
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
 
       await apiRequest(API_ROUTES.MATCHES.UPDATE(matchId), {
         method: 'PUT',
@@ -154,10 +244,14 @@ const Scoreboard = () => {
   };
 
   const handleDeleteAndExit = async () => {
-    console.log(matchId)
     try {
       if (!matchId) return;
-      console.log(matchId)
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
       await apiRequest(API_ROUTES.MATCHES.DELETE(matchId), {
         method: 'DELETE'
       });
@@ -185,10 +279,24 @@ const Scoreboard = () => {
       teamName = 'Ellos'
     }
 
+    const stage = getScoreStage(team.score);
+
     return (
     <Box>
       <Typography variant="h5" gutterBottom align="center" sx={{ fontWeight: 'bold', mb: 2 }}>
         {teamName}
+      </Typography>
+      <Typography
+        variant="subtitle2"
+        align="center"
+        sx={{
+          fontWeight: 'bold',
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+          color: stage.color,
+        }}
+      >
+        {stage.label}
       </Typography>
       <Box
         sx={{
@@ -228,9 +336,11 @@ const Scoreboard = () => {
             minWidth: 80,
             textAlign: 'center',
             fontWeight: 'bold',
+            color: stage.color,
+            transition: 'color 0.2s ease',
           }}
         >
-          {team.score}
+          {getDisplayScore(team.score)}
         </Typography>
 
         <Button

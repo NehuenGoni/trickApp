@@ -1,16 +1,38 @@
 import mongoose, { Schema, Document } from "mongoose";
-import { MATCH_TYPES, MATCH_STATUS } from "../config/constants";
+import {
+  MATCH_TYPES,
+  MATCH_STATUS,
+  MATCH_PHASES,
+  BRACKET_SLOTS
+} from "../config/constants";
 
-interface IMatch extends Document {
-  tournament: mongoose.Types.ObjectId | string;
-  teams: {
-    teamId: mongoose.Types.ObjectId;
-    score: number;
-  }[]; 
-  winner?: mongoose.Types.ObjectId; 
-  status: "in_progress" | "finished"; 
+export type MatchPhase = typeof MATCH_PHASES[keyof typeof MATCH_PHASES];
+export type MatchStatus = typeof MATCH_STATUS[keyof typeof MATCH_STATUS];
+export type BracketSlot = typeof BRACKET_SLOTS[keyof typeof BRACKET_SLOTS];
+
+export interface IMatchPlayer {
+  playerId?: mongoose.Types.ObjectId;
+  username?: string;
+  isGuest?: boolean;
+}
+
+export interface IMatchTeam {
+  teamId: mongoose.Types.ObjectId;
+  score: number;
+  players: IMatchPlayer[];
+}
+
+export interface IMatch extends Document {
+  tournament?: mongoose.Types.ObjectId | string;
+  teams: IMatchTeam[];
+  winner?: mongoose.Types.ObjectId;
+  losingTeam?: mongoose.Types.ObjectId;
+  status: MatchStatus;
   type: "friendly" | "tournament";
-  phase?: "group" | "quarter" | "semi" | "final";
+  phase?: MatchPhase;
+  bracketSlot?: BracketSlot;
+  feedsWinnerTo?: mongoose.Types.ObjectId;
+  feedsLoserTo?: mongoose.Types.ObjectId;
   createdAt: Date;
 }
 
@@ -18,13 +40,13 @@ const MatchSchema = new Schema<IMatch>(
   {
     tournament: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Tournament",   
+      ref: "Tournament",
       required: false
     },
     teams: [
       {
-        teamId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        score: { type: Number, default: 0 },
+        teamId: { type: mongoose.Schema.Types.ObjectId },
+        score: { type: Number, default: 0, min: 0 },
         players: [
           {
             playerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -34,26 +56,37 @@ const MatchSchema = new Schema<IMatch>(
         ]
       }
     ],
-    winner: { type: Schema.Types.ObjectId, ref: "User", required: false},
-    status: { 
-      type: String, 
-      enum: Object.values(MATCH_STATUS), 
-      default: MATCH_STATUS.IN_PROGRESS 
+    winner: { type: Schema.Types.ObjectId, required: false },
+    losingTeam: { type: Schema.Types.ObjectId, required: false },
+    status: {
+      type: String,
+      enum: Object.values(MATCH_STATUS),
+      default: MATCH_STATUS.IN_PROGRESS
     },
     type: {
       type: String,
       enum: Object.values(MATCH_TYPES),
       default: MATCH_TYPES.FRIENDLY
     },
-    phase: { 
-      type: String, 
-      enum: ["group", "quarter-finals", "semi-finals", "final"], 
-      required: false 
+    phase: {
+      type: String,
+      enum: Object.values(MATCH_PHASES),
+      required: false
     },
+    bracketSlot: {
+      type: String,
+      enum: Object.values(BRACKET_SLOTS),
+      required: false
+    },
+    feedsWinnerTo: { type: mongoose.Schema.Types.ObjectId, ref: "Match", required: false },
+    feedsLoserTo: { type: mongoose.Schema.Types.ObjectId, ref: "Match", required: false },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "matches", timestamps: true }
 );
+
+MatchSchema.index({ status: 1 });
+MatchSchema.index({ tournament: 1, bracketSlot: 1, status: 1 });
 
 const Match = mongoose.model<IMatch>("Match", MatchSchema, "matches");
 

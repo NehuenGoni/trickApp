@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(dir \"c:\\\\Users\\\\Nehuen\\\\Desktop\\\\Proyectos JS\\\\TrickApp\\\\backend\\\\src\\\\config\")",
+      "Bash(dir \"c:\\\\Users\\\\Nehuen\\\\Desktop\\\\Proyectos JS\\\\TrickApp\\\\backend\\\\src\\\\scripts\")",
+      "Bash(npx eslint *)"
+    ]
+  }
+}

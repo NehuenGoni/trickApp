@@ -9,6 +9,8 @@ const authMiddleware_1 = __importDefault(require("../middlewares/authMiddleware"
 const router = express_1.default.Router();
 router.get("/", authMiddleware_1.default, user_controller_1.getAllUsers);
 router.get("/search", authMiddleware_1.default, user_controller_1.searchUsers);
-router.get("/:id", authMiddleware_1.default, user_controller_1.getUserById);
+router.get("/matchesNames/:id", authMiddleware_1.default, user_controller_1.getUserNameById);
 router.get("/:id/stats", authMiddleware_1.default, user_controller_1.getUserMatches);
+router.get("/:id/matches-length", authMiddleware_1.default, user_controller_1.getUserMatchesLength);
+router.get("/:id", authMiddleware_1.default, user_controller_1.getUserById);
 exports.default = router;

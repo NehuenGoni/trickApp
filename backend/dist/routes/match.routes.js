@@ -9,8 +9,9 @@ const authMiddleware_1 = __importDefault(require("../middlewares/authMiddleware"
 const router = express_1.default.Router();
 router.post("/", authMiddleware_1.default, match_controller_1.createMatch);
 router.put("/:id", authMiddleware_1.default, match_controller_1.updateMatch);
+router.patch("/:id/score", authMiddleware_1.default, match_controller_1.updateMatchScore);
 router.get("/", match_controller_1.getMatches);
 router.get("/:id", match_controller_1.getMatchById);
-router.delete("/:id", match_controller_1.deleteMatch);
+router.delete("/:id", authMiddleware_1.default, match_controller_1.deleteMatch);
 router.get("/tournament/:tournamentId", match_controller_1.getMatchesByTournament);
 exports.default = router;

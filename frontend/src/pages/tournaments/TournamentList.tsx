@@ -32,7 +32,10 @@ interface Tournament {
   name: string;
   description: string;
   startDate: string;
-  status: 'upcoming' | 'in_progress' | 'finished';
+  status: 'upcoming' | 'in_progress' | 'completed';
+  type?: 'grand-slam' | 'master-1000';
+  format?: 'duos' | 'trios';
+  teamFormationMode?: 'user-formed' | 'random';
   teams: Array<{
     teamId: string;
     name: string;
@@ -42,19 +45,8 @@ interface Tournament {
       isGuest?: boolean;
     }>;
   }>;
-  matches?: Array<{
-    _id: string;
-    team1: {
-      teamId: string;
-      score: number;
-    };
-    team2: {
-      teamId: string;
-      score: number;
-    };
-    phase: string;
-    status: string;
-  }>;
+  individualSignups?: Array<{ userId: string; name: string }>;
+  matches?: string[];
 }
 
 const TournamentList = () => {
@@ -106,10 +98,10 @@ const TournamentList = () => {
         };
       case 'in_progress':
         return {
-          bgcolor: '#D4AF37', // amarillo app
+          bgcolor: '#D4AF37',
           color: '#000',
         };
-      case 'finished':
+      case 'completed':
         return {
           bgcolor: 'success.main',
           color: 'success.contrastText',
@@ -120,13 +112,26 @@ const TournamentList = () => {
   const getStatusLabel = (status: Tournament['status']) => {
     switch (status) {
       case 'upcoming':
-        return 'Próximo';
+        return 'Inscripciones abiertas';
       case 'in_progress':
         return 'En Curso';
-      case 'finished':
+      case 'completed':
         return 'Finalizado';
     }
   };
+
+  const getCapacityLabel = (t: Tournament) => {
+    const teamSize = t.format === 'trios' ? 3 : 2;
+    if (t.teamFormationMode === 'random') {
+      const filled =
+        (t.individualSignups?.length || 0) + (t.teams?.length || 0) * teamSize;
+      return `${filled}/${8 * teamSize} jugadores`;
+    }
+    return `${t.teams?.length || 0}/8 equipos`;
+  };
+
+  const getTypeLabel = (type?: Tournament['type']) =>
+    type === 'grand-slam' ? 'Grand Slam' : type === 'master-1000' ? 'Master 1000' : '';
 
   if (loading) {
     return (
@@ -216,9 +221,18 @@ const TournamentList = () => {
                   />
                 </Box>
 
-                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                  <Chip size="small" label={`${tournament.teams.length} equipos`} />
-                  <Chip size="small" label={`${tournament.matches?.length} partidos`} />
+                <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                  {tournament.type && (
+                    <Chip size="small" label={getTypeLabel(tournament.type)} />
+                  )}
+                  {tournament.format && (
+                    <Chip
+                      size="small"
+                      label={tournament.format === 'duos' ? 'Duos' : 'Tríos'}
+                    />
+                  )}
+                  <Chip size="small" label={getCapacityLabel(tournament)} />
+                  <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
                 </Box>
 
                 <Box
@@ -254,7 +268,7 @@ const TournamentList = () => {
                   </IconButton>
                   <IconButton
                     title="Eliminar torneo"
-                    disabled={tournament.status === 'finished'}
+                    disabled={tournament.status === 'completed'}
                     onClick={() => {
                       setSelectedTournament(tournament._id);
                       setDeleteDialogOpen(true);

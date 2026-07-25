@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -11,12 +11,13 @@ import {
   Divider
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import API_ROUTES, { apiRequest } from '../config/api';
+import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
 import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
   Timeline as StatsIcon,
   Dashboard as DashboardIcon,
+  AdminPanelSettings as AdminIcon,
   Logout as LogoutIcon
 } from '@mui/icons-material';
 
@@ -56,20 +57,8 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [username, setUsername] = useState('');
-
-  useEffect(() => {
-    fetchUserData();
-  }, []);
-
-  const fetchUserData = async () => {
-    try {
-      const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
-      setUsername(data.user.username);
-    } catch (err) {
-      console.error('Error al cargar los datos del usuario');
-    }
-  };
+  const { user, isAdmin } = useCurrentUser();
+  const username = user?.username ?? '';
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -81,6 +70,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   
   const handleLogout = () => {
     localStorage.removeItem('token');
+    clearCurrentUserCache();
     navigate('/login');
   };
 
@@ -96,6 +86,12 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     { icon: <PersonIcon fontSize="small" />, label: 'Mi Perfil', path: '/profile' },
     { icon: <StatsIcon fontSize="small" />, label: 'Mis Estadísticas', path: '/stats' },
     { icon: <TrophyIcon fontSize="small" />, label: 'Mis Logros', path: '/achievements' },
+    ...(isAdmin
+      ? ([
+          { divider: true },
+          { icon: <AdminIcon fontSize="small" />, label: 'Panel Admin', path: '/admin' }
+        ] as AppMenuItem[])
+      : []),
     { divider: true },
     { icon: <LogoutIcon fontSize="small" />, label: 'Cerrar Sesión', action: handleLogout }
   ];

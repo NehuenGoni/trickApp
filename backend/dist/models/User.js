@@ -14,17 +14,40 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const constants_1 = require("../config/constants");
+const pointsAdjustmentSchema = new mongoose_1.default.Schema({
+    delta: { type: Number, required: true },
+    reason: { type: String, required: true },
+    adjustedBy: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "User" },
+    adjustedAt: { type: Date, default: Date.now }
+}, { _id: false });
 const userSchema = new mongoose_1.default.Schema({
     username: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-});
+    totalPoints: { type: Number, default: 0, min: 0 },
+    role: {
+        type: String,
+        enum: Object.values(constants_1.ROLES),
+        default: constants_1.ROLES.USER
+    },
+    passwordChangedAt: { type: Date },
+    // Se guarda el hash del token de recuperación, nunca el valor que viaja al mail:
+    // si alguien lee la base no puede reconstruir el enlace.
+    passwordResetToken: { type: String, select: false, index: true, sparse: true },
+    passwordResetExpires: { type: Date, select: false },
+    pointsAdjustments: { type: [pointsAdjustmentSchema], default: [] },
+}, { timestamps: true });
 userSchema.pre("save", function (next) {
     return __awaiter(this, void 0, void 0, function* () {
         const user = this;
         if (!user.isModified("password"))
             return next();
         user.password = yield bcryptjs_1.default.hash(user.password, 10);
+        // Se resta un segundo para evitar que un token emitido en el mismo instante
+        // quede invalidado por el redondeo del campo `iat` (que va en segundos).
+        if (!user.isNew)
+            user.passwordChangedAt = new Date(Date.now() - 1000);
         next();
     });
 });
