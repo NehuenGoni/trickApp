@@ -1,6 +1,9 @@
 # dependencies
 /node_modules
 
+# backups de datos reales de producción (emails, hashes) — nunca versionar
+/backups
+
 # dotenv environment variables
 .env
 .env.local

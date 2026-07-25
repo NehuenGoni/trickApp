@@ -7,12 +7,14 @@ import TournamentModel, {
   ITeam,
   IPlayer,
   IPlayerStat,
-  IIndividualSignup
+  IIndividualSignup,
+  GuestDrawMode
 } from "../models/Tournament";
 import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
   TEAM_FORMATION_MODES,
+  GUEST_DRAW_MODES,
   FORMAT_TEAM_SIZE,
   TOURNAMENT_TEAMS_COUNT,
   POINTS_TABLE,
@@ -35,6 +37,9 @@ const isValidFormat = (value: unknown): value is keyof typeof FORMAT_TEAM_SIZE =
 const isValidFormationMode = (value: unknown) =>
   value === TEAM_FORMATION_MODES.USER_FORMED ||
   value === TEAM_FORMATION_MODES.RANDOM;
+
+const isValidGuestDrawMode = (value: unknown): value is GuestDrawMode =>
+  value === GUEST_DRAW_MODES.GROUPED || value === GUEST_DRAW_MODES.MIXED;
 
 const shuffle = <T,>(arr: T[]): T[] => {
   const out = [...arr];
@@ -59,21 +64,29 @@ const isUserAlreadyInTournament = (
 };
 
 /**
- * Arma los equipos faltantes a partir de los inscriptos individuales, agrupando
- * primero a los invitados entre ellos. El corte en bloques es secuencial, así que
- * los invitados barajados van al frente de la lista: los primeros equipos salen
- * 100% invitados, a lo sumo uno queda mixto (el que absorbe el resto de la
- * división) y ningún equipo posterior lleva invitados.
+ * Arma los equipos faltantes a partir de los inscriptos individuales. El criterio
+ * para los invitados depende de `guestDrawMode`:
+ * - `grouped`: se agrupan entre ellos y van al frente de la lista antes de cortar
+ *   en bloques secuenciales, así que los primeros equipos salen 100% invitados, a
+ *   lo sumo uno queda mixto (el que absorbe el resto de la división) y ningún
+ *   equipo posterior lleva invitados.
+ * - `mixed`: entran al pool general y se barajan junto con los registrados, así
+ *   que pueden quedar dispersos en cualquier equipo.
  */
 export const buildDrawnTeams = (
   signups: IIndividualSignup[],
   expectedSize: number,
   teamsNeeded: number,
-  existingTeamsCount: number
+  existingTeamsCount: number,
+  guestDrawMode: GuestDrawMode
 ): ITeam[] => {
-  const guests = signups.filter((s) => s.isGuest);
-  const registered = signups.filter((s) => !s.isGuest);
-  const ordered = [...shuffle(guests), ...shuffle(registered)];
+  const ordered =
+    guestDrawMode === GUEST_DRAW_MODES.MIXED
+      ? shuffle(signups)
+      : [
+          ...shuffle(signups.filter((s) => s.isGuest)),
+          ...shuffle(signups.filter((s) => !s.isGuest))
+        ];
 
   const newTeams: ITeam[] = [];
   let cursor = 0;
@@ -102,7 +115,8 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
     description,
     type,
     format,
-    teamFormationMode
+    teamFormationMode,
+    guestDrawMode
   } = req.body;
   const createdBy = req.user;
 
@@ -115,6 +129,9 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
   if (!isValidFormationMode(teamFormationMode)) {
     return void res.status(400).json({ message: "Modo de formación de equipos inválido" });
   }
+  if (guestDrawMode !== undefined && !isValidGuestDrawMode(guestDrawMode)) {
+    return void res.status(400).json({ message: "Modo de agrupación de invitados inválido (grouped | mixed)" });
+  }
 
   try {
     const tournament = new TournamentModel({
@@ -124,6 +141,7 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
       type,
       format,
       teamFormationMode,
+      ...(guestDrawMode !== undefined ? { guestDrawMode } : {}),
       createdBy,
       status: "upcoming",
       teams: [],
@@ -792,7 +810,8 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
         tournament.individualSignups,
         expectedSize,
         teamsNeeded,
-        tournament.teams.length
+        tournament.teams.length,
+        tournament.guestDrawMode
       );
       tournament.teams.push(...drawnTeams);
     } else {
@@ -869,7 +888,8 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
           tournament.individualSignups,
           expectedSize,
           teamsNeeded,
-          tournament.teams.length
+          tournament.teams.length,
+          tournament.guestDrawMode
         );
         tournament.teams.push(...drawnTeams);
       } else {

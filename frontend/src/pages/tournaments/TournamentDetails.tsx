@@ -93,6 +93,7 @@ interface Tournament {
   type: 'grand-slam' | 'master-1000';
   format: 'duos' | 'trios';
   teamFormationMode: 'user-formed' | 'random';
+  guestDrawMode: 'grouped' | 'mixed';
   createdBy: string;
   teams: Team[];
   individualSignups: Signup[];
@@ -876,6 +877,13 @@ const TournamentDetails = () => {
               <Typography variant="h6" gutterBottom>
                 Sorteo
               </Typography>
+              {tournament.teamFormationMode === 'random' && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Invitados: {tournament.guestDrawMode === 'mixed'
+                    ? 'mezclados con todos los jugadores'
+                    : 'agrupados entre ellos'}
+                </Typography>
+              )}
               {!hasDraft ? (
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -1154,8 +1162,9 @@ const TournamentDetails = () => {
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
               Podés seleccionar varios jugadores registrados y agregar invitados sueltos.
-              Al sortear, los invitados se agrupan entre ellos antes de completar equipos
-              con jugadores registrados.
+              {tournament?.guestDrawMode === 'mixed'
+                ? ' Al sortear, los invitados entran al pool general y se mezclan con los jugadores registrados.'
+                : ' Al sortear, los invitados se agrupan entre ellos antes de completar equipos con jugadores registrados.'}
             </Typography>
             <Typography
               variant="body2"
