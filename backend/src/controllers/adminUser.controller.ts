@@ -4,14 +4,13 @@ import mongoose from "mongoose";
 import User, { UserRole } from "../models/User";
 import Match from "../models/Match";
 import TournamentModel from "../models/Tournament";
-import { ROLES } from "../config/constants";
+import { ROLES, MIN_PASSWORD_LENGTH } from "../config/constants";
 
 interface AuthRequest extends Request {
   user?: string;
 }
 
 const PUBLIC_FIELDS = "-password";
-const MIN_PASSWORD_LENGTH = 6;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const isValidRole = (value: unknown): value is UserRole =>
@@ -208,6 +207,13 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
     // cualquier token que el usuario tuviera activo.
     user.password = password;
     await user.save();
+
+    // Los campos de recuperación se cargan con `select: false`, así que se limpian
+    // aparte: un enlace de "olvidé mi contraseña" pendiente ya no debe servir.
+    await User.updateOne(
+      { _id: user._id },
+      { $unset: { passwordResetToken: "", passwordResetExpires: "" } }
+    );
 
     res.status(200).json({
       message: `Contraseña de ${user.username} restablecida. Sus sesiones activas se cerraron.`,
