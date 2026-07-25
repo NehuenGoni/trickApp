@@ -164,7 +164,9 @@ const TournamentDetails = () => {
     try {
       setLoading(true);
       const tData = await apiRequest(API_ROUTES.TOURNAMENTS.GET(id));
-      setTournament(tData);
+      // Torneos viejos en producción pueden no tener estos campos si se crearon
+      // antes de que existieran en el schema (ver scripts/migrateProdToLatest.ts).
+      setTournament({ ...tData, teams: tData.teams ?? [], individualSignups: tData.individualSignups ?? [] });
       const mData = await apiRequest(API_ROUTES.MATCHES.GET_BY_TOURNAMENT(id));
       setMatches(mData);
     } catch (err) {
