@@ -2,12 +2,14 @@ import mongoose, { Schema, model, Document } from "mongoose";
 import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
-  TEAM_FORMATION_MODES
+  TEAM_FORMATION_MODES,
+  GUEST_DRAW_MODES
 } from "../config/constants";
 
 export type TournamentType = typeof TOURNAMENT_TYPES[keyof typeof TOURNAMENT_TYPES];
 export type TournamentFormat = typeof TOURNAMENT_FORMATS[keyof typeof TOURNAMENT_FORMATS];
 export type TeamFormationMode = typeof TEAM_FORMATION_MODES[keyof typeof TEAM_FORMATION_MODES];
+export type GuestDrawMode = typeof GUEST_DRAW_MODES[keyof typeof GUEST_DRAW_MODES];
 
 export interface IPlayer {
   playerId?: mongoose.Types.ObjectId;
@@ -44,6 +46,7 @@ export interface ITournament extends Document {
   type: TournamentType;
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
+  guestDrawMode: GuestDrawMode;
   teams: ITeam[];
   individualSignups: IIndividualSignup[];
   draftPairOrder?: mongoose.Types.ObjectId[];
@@ -117,6 +120,12 @@ const tournamentSchema = new Schema<ITournament>(
       enum: Object.values(TEAM_FORMATION_MODES),
       required: true,
       default: TEAM_FORMATION_MODES.USER_FORMED
+    },
+    guestDrawMode: {
+      type: String,
+      enum: Object.values(GUEST_DRAW_MODES),
+      required: true,
+      default: GUEST_DRAW_MODES.GROUPED
     },
     teams: { type: [TeamSchema], default: [] },
     individualSignups: { type: [IndividualSignupSchema], default: [] },

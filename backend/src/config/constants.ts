@@ -64,6 +64,11 @@ export const TEAM_FORMATION_MODES = {
   RANDOM: 'random'
 } as const;
 
+export const GUEST_DRAW_MODES = {
+  GROUPED: 'grouped',
+  MIXED: 'mixed'
+} as const;
+
 export const FORMAT_TEAM_SIZE = {
   duos: 2,
   trios: 3

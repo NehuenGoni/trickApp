@@ -21,6 +21,7 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 type TournamentType = 'grand-slam' | 'master-1000';
 type TournamentFormat = 'duos' | 'trios';
 type TeamFormationMode = 'user-formed' | 'random';
+type GuestDrawMode = 'grouped' | 'mixed';
 
 interface TournamentForm {
   name: string;
@@ -29,6 +30,7 @@ interface TournamentForm {
   type: TournamentType;
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
+  guestDrawMode: GuestDrawMode;
 }
 
 const isAuthError = (error: { response?: { status?: number }; message?: string }) =>
@@ -46,7 +48,8 @@ const CreateTournament = () => {
     startDate: new Date().toISOString().split('T')[0],
     type: 'grand-slam',
     format: 'duos',
-    teamFormationMode: 'user-formed'
+    teamFormationMode: 'user-formed',
+    guestDrawMode: 'grouped'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -83,7 +86,8 @@ const CreateTournament = () => {
           startDate: formData.startDate,
           type: formData.type,
           format: formData.format,
-          teamFormationMode: formData.teamFormationMode
+          teamFormationMode: formData.teamFormationMode,
+          guestDrawMode: formData.guestDrawMode
         })
       });
       navigate(`/tournaments/${created._id}`);
@@ -106,6 +110,11 @@ const CreateTournament = () => {
     formData.teamFormationMode === 'user-formed'
       ? 'Cada usuario inscribe su equipo armado (con compañeros elegidos por el).'
       : 'Cada usuario se inscribe individualmente; los equipos se sortean al iniciar.';
+
+  const guestDrawDescription =
+    formData.guestDrawMode === 'grouped'
+      ? 'Los invitados se agrupan entre ellos: los primeros equipos salen formados solo por invitados.'
+      : 'Los invitados entran al sorteo general y pueden quedar en cualquier equipo junto a jugadores registrados.';
 
   const targetParticipants =
     formData.teamFormationMode === 'random'
@@ -228,6 +237,32 @@ const CreateTournament = () => {
                     {formationDescription}
                   </Typography>
                 </Box>
+
+                {formData.teamFormationMode === 'random' && (
+                  <Box sx={{ my: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Invitados en el sorteo
+                    </Typography>
+                    <ToggleButtonGroup
+                      color="primary"
+                      exclusive
+                      value={formData.guestDrawMode}
+                      onChange={(_, value) =>
+                        value && setFormData({ ...formData, guestDrawMode: value })
+                      }
+                    >
+                      <ToggleButton value="grouped">
+                        Agrupados entre ellos
+                      </ToggleButton>
+                      <ToggleButton value="mixed">
+                        Mezclados con todos
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {guestDrawDescription}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
 
@@ -255,6 +290,14 @@ const CreateTournament = () => {
                       ? 'Armados por jugadores'
                       : 'Aleatorios'}
                   </Typography>
+                  {formData.teamFormationMode === 'random' && (
+                    <Typography>
+                      <b>Invitados en el sorteo:</b>{' '}
+                      {formData.guestDrawMode === 'grouped'
+                        ? 'Agrupados entre ellos'
+                        : 'Mezclados con todos'}
+                    </Typography>
+                  )}
                 </Paper>
                 <Alert severity="info">
                   El torneo quedará abierto a inscripciones. Esperá a que se completen
