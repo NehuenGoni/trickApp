@@ -10,7 +10,7 @@ router.patch("/:id/score", authMiddleware, updateMatchScore);
 
 router.get("/", getMatches);
 router.get("/:id", getMatchById);
-router.delete("/:id", deleteMatch);
+router.delete("/:id", authMiddleware, deleteMatch);
 
 router.get("/tournament/:tournamentId", getMatchesByTournament);
 

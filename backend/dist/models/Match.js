@@ -43,8 +43,8 @@ const MatchSchema = new mongoose_1.Schema({
     },
     teams: [
         {
-            teamId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "User" },
-            score: { type: Number, default: 0 },
+            teamId: { type: mongoose_1.default.Schema.Types.ObjectId },
+            score: { type: Number, default: 0, min: 0 },
             players: [
                 {
                     playerId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "User" },
@@ -54,7 +54,8 @@ const MatchSchema = new mongoose_1.Schema({
             ]
         }
     ],
-    winner: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: false },
+    winner: { type: mongoose_1.Schema.Types.ObjectId, required: false },
+    losingTeam: { type: mongoose_1.Schema.Types.ObjectId, required: false },
     status: {
         type: String,
         enum: Object.values(constants_1.MATCH_STATUS),
@@ -67,10 +68,19 @@ const MatchSchema = new mongoose_1.Schema({
     },
     phase: {
         type: String,
-        enum: ["group", "quarter-finals", "semi-finals", "final"],
+        enum: Object.values(constants_1.MATCH_PHASES),
         required: false
     },
+    bracketSlot: {
+        type: String,
+        enum: Object.values(constants_1.BRACKET_SLOTS),
+        required: false
+    },
+    feedsWinnerTo: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "Match", required: false },
+    feedsLoserTo: { type: mongoose_1.default.Schema.Types.ObjectId, ref: "Match", required: false },
     createdAt: { type: Date, default: Date.now },
 }, { collection: "matches", timestamps: true });
+MatchSchema.index({ status: 1 });
+MatchSchema.index({ tournament: 1, bracketSlot: 1, status: 1 });
 const Match = mongoose_1.default.model("Match", MatchSchema, "matches");
 exports.default = Match;

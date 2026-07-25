@@ -21,6 +21,23 @@ const TERMINAL_SLOTS = new Set<string>([
   BRACKET_SLOTS.M78
 ]);
 
+// Solo restringe partidos de torneo: en un amistoso el modelo Match no guarda
+// quién lo creó, así que no hay contra qué autorizar (un amistoso entre
+// invitados no tiene ningún playerId). Se deja igual de laxo que hoy.
+// En torneo, puede modificarlo quien juega el partido o quien creó el torneo.
+const canModifyMatch = async (match: IMatch, userId?: string): Promise<boolean> => {
+  if (match.type !== MATCH_TYPES.TOURNAMENT) return true;
+
+  const isPlayer = match.teams.some((t) =>
+    t.players.some((p) => p.playerId && p.playerId.toString() === userId)
+  );
+  if (isPlayer) return true;
+
+  if (!match.tournament) return false;
+  const tournament = await Tournament.findById(match.tournament);
+  return !!tournament && tournament.createdBy.toString() === userId;
+};
+
 export const createMatch = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { tournament, teams, type, phase } = req.body;
@@ -191,6 +208,10 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
+    if (!(await canModifyMatch(match, req.user))) {
+      return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
+    }
+
     if (match.status === MATCH_STATUS.FINISHED && status !== undefined) {
       return void res.status(409).json({ message: "El partido ya está finalizado" });
     }
@@ -283,6 +304,10 @@ export const updateMatchScore = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
+    if (!(await canModifyMatch(match, req.user))) {
+      return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
+    }
+
     if (match.status === MATCH_STATUS.FINISHED) {
       return void res.status(409).json({ message: "El partido ya está finalizado" });
     }
@@ -329,6 +354,9 @@ export const deleteMatch = async (req: Request, res: Response): Promise<void> =>
     const match = await Match.findById(req.params.id);
     if (!match) {
       return void res.status(404).json({ message: "Partido no encontrado" });
+    }
+    if (!(await canModifyMatch(match, req.user))) {
+      return void res.status(403).json({ message: "No tenés permiso para eliminar este partido" });
     }
     if (match.tournament) {
       const tournament = await Tournament.findById(match.tournament);

@@ -18,6 +18,7 @@ import Stats from './pages/stats/Stats';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminTournaments from './pages/admin/AdminTournaments';
+import LiveTournament from './pages/live/LiveTournament';
 
 
 function App(): JSX.Element {
@@ -73,6 +74,8 @@ function App(): JSX.Element {
           } />
 
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
+
+          <Route path="/live/:tournamentId" element={<LiveTournament />} />
 
           <Route path="/admin" element={
             <AdminRoute>

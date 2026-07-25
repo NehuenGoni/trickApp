@@ -28,6 +28,7 @@ router.get("/", getTournaments);
 router.get("/open", getOpenTournaments);
 router.get("/:id", getTournamentById);
 router.get("/:id/leaderboard", getTournamentLeaderboard);
+router.get("/:id/live", getTournamentLive);
 router.put("/:id", authMiddleware, updateTournament);
 router.delete("/:id", authMiddleware, deleteTournament);
 

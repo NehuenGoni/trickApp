@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUserMatches = exports.searchUsers = exports.getUserById = exports.getAllUsers = void 0;
+exports.getUserNameById = exports.getUserMatchesLength = exports.getUserMatches = exports.searchUsers = exports.getUserById = exports.getAllUsers = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const Match_1 = __importDefault(require("../models/Match"));
 const getAllUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -59,9 +59,14 @@ exports.searchUsers = searchUsers;
 const getUserMatches = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
+        const skip = parseInt(req.query.skip) || 0;
+        const limit = parseInt(req.query.limit) || 10;
         const matches = yield Match_1.default.find({
             "teams.players.playerId": id
-        });
+        })
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
         if (!matches || matches.length === 0) {
             res.status(404).json({ message: "No se encontraron partidos para este usuario" });
             return;
@@ -73,3 +78,31 @@ const getUserMatches = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.getUserMatches = getUserMatches;
+const getUserMatchesLength = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const matchCount = yield Match_1.default.countDocuments({
+            "teams.players.playerId": id
+        });
+        res.status(200).json({ totalMatches: matchCount });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error al obtener total de partidos del jugador', error: error.message });
+    }
+});
+exports.getUserMatchesLength = getUserMatchesLength;
+const getUserNameById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const user = yield User_1.default.findById(id).select('username');
+        if (!user) {
+            res.status(404).json({ message: "Usuario no encontrado" });
+            return;
+        }
+        res.status(200).json({ username: user.username });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error al obtener nombre del usuario', error: error.message });
+    }
+});
+exports.getUserNameById = getUserNameById;

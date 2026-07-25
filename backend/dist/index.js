@@ -12,6 +12,7 @@ const tournament_routes_1 = __importDefault(require("./routes/tournament.routes"
 const match_routes_1 = __importDefault(require("./routes/match.routes"));
 const league_routes_1 = __importDefault(require("./routes/league.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
+const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
@@ -25,6 +26,8 @@ mongoose_1.default
 app.use("/auth", auth_routes_1.default);
 // Users
 app.use("/users", user_routes_1.default);
+// Panel de administración
+app.use("/admin", admin_routes_1.default);
 // Test
 app.get("/", (req, res) => {
     res.send("Servidor funcionando!");

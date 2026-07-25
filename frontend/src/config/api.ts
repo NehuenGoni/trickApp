@@ -38,6 +38,8 @@ const API_ROUTES = {
     REGISTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/register`,
     ADD_GUEST_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams/guests`,
     LEADERBOARD: (id: string) => `${API_BASE_URL}/tournaments/${id}/leaderboard`,
+    LIVE: (id: string, since?: string) =>
+      `${API_BASE_URL}/tournaments/${id}/live${since ? `?since=${encodeURIComponent(since)}` : ''}`,
     SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
     SIGNUP_ADMIN_REMOVE: (id: string, signupId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${signupId}`,
   },

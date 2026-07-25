@@ -27,9 +27,11 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import TvIcon from '@mui/icons-material/Tv';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import { PHASE_LABELS, PHASE_ORDER } from '../../utils/tournament';
 
 interface PlayerLite {
   playerId?: string;
@@ -106,26 +108,6 @@ interface UserOption {
 }
 
 const TEAM_SIZE: Record<Tournament['format'], number> = { duos: 2, trios: 3 };
-
-const PHASE_LABELS: Record<string, string> = {
-  'quarter-finals': 'Cuartos de Final',
-  'semifinals-gold': 'Semifinales de Oro',
-  'semifinals': 'Semifinales de Plata',
-  'final-gold': 'Final Oro',
-  'final': 'Final Plata',
-  'third-place': 'Match por 3°/4° puesto',
-  'seventh-place': 'Match por 7°/8° puesto'
-};
-
-const PHASE_ORDER = [
-  'quarter-finals',
-  'semifinals-gold',
-  'semifinals',
-  'final-gold',
-  'final',
-  'third-place',
-  'seventh-place'
-];
 
 const TournamentDetails = () => {
   const navigate = useNavigate();
@@ -642,9 +624,26 @@ const TournamentDetails = () => {
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" gutterBottom>
-            {tournament.name}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+            <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+              {tournament.name}
+            </Typography>
+            {tournament.status !== 'upcoming' && (
+              <Button
+                variant="contained"
+                startIcon={<TvIcon />}
+                onClick={() => window.open(`/live/${tournament._id}`, '_blank', 'noopener')}
+                sx={{
+                  bgcolor: '#D4AF37',
+                  color: '#000',
+                  fontWeight: 700,
+                  '&:hover': { bgcolor: '#c29d2e' }
+                }}
+              >
+                Transmitir
+              </Button>
+            )}
+          </Box>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           {info && <Alert severity="success" sx={{ mb: 2 }}>{info}</Alert>}

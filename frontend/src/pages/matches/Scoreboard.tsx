@@ -19,6 +19,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { useWakeLock } from '../../hooks/useWakeLock';
+import { MAX_SCORE, getScoreStage, getDisplayScore } from '../../utils/truco';
 
 interface Team {
   teamId: string;
@@ -41,20 +42,10 @@ interface Match {
   createdAt: string;
 }
 
-const MAX_SCORE = 30;
-const HALF_SCORE = 15;
-const DEBOUNCE_MS = 800;
-
-const SCORE_STAGE = {
-  malas: { label: 'Malas', color: '#B23A48' },
-  buenas: { label: 'Buenas', color: '#2E7D32' },
-} as const;
-
-const getScoreStage = (score: number) => (score <= HALF_SCORE ? SCORE_STAGE.malas : SCORE_STAGE.buenas);
-
-// El score interno sigue siendo 0-30, pero al pasar a "buenas" el contador
-// visual vuelve a arrancar de 1 (16 -> 1, ..., 30 -> 15).
-const getDisplayScore = (score: number) => (score <= HALF_SCORE ? score : score - HALF_SCORE);
+// Espectadores en /live/:id sondean el estado cada ~2.5s (ver useLiveTournament),
+// así que bajar este debounce reduce la latencia total percibida en la pantalla
+// de transmisión (antes: 0.8s + poll ≈ 3.3s peor caso; ahora ≈ 2.9s).
+const DEBOUNCE_MS = 400;
 
 const Scoreboard = () => {
   const { matchId } = useParams();

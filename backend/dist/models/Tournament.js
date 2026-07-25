@@ -34,25 +34,71 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const constants_1 = require("../config/constants");
 const PlayerSchema = new mongoose_1.Schema({
-    playerId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: function () {
+    playerId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "User",
+        required: function () {
             return !this.isGuest;
-        } },
+        }
+    },
     name: { type: String, required: false },
     isGuest: { type: Boolean, default: false }
 });
 const TeamSchema = new mongoose_1.Schema({
     teamId: { type: mongoose_1.Schema.Types.ObjectId, auto: true },
     name: { type: String, required: true },
+    registeredBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: false },
     players: { type: [PlayerSchema], required: true },
+    isDrawn: { type: Boolean, default: false },
 });
+const IndividualSignupSchema = new mongoose_1.Schema({
+    signupId: { type: mongoose_1.Schema.Types.ObjectId, auto: true },
+    userId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "User",
+        required: function () { return !this.isGuest; }
+    },
+    name: { type: String, required: true },
+    isGuest: { type: Boolean, default: false }
+}, { _id: false });
+const PlayerStatSchema = new mongoose_1.Schema({
+    playerId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: false },
+    name: { type: String, required: true },
+    isGuest: { type: Boolean, default: false },
+    position: { type: Number, required: true, min: 1, max: 8 },
+    points: { type: Number, required: true, min: 0 }
+}, { _id: false });
 const tournamentSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
-    teams: { type: [TeamSchema], required: true },
+    type: {
+        type: String,
+        enum: Object.values(constants_1.TOURNAMENT_TYPES),
+        required: true,
+        default: constants_1.TOURNAMENT_TYPES.MASTER_1000
+    },
+    format: {
+        type: String,
+        enum: Object.values(constants_1.TOURNAMENT_FORMATS),
+        required: true,
+        default: constants_1.TOURNAMENT_FORMATS.DUOS
+    },
+    teamFormationMode: {
+        type: String,
+        enum: Object.values(constants_1.TEAM_FORMATION_MODES),
+        required: true,
+        default: constants_1.TEAM_FORMATION_MODES.USER_FORMED
+    },
+    teams: { type: [TeamSchema], default: [] },
+    individualSignups: { type: [IndividualSignupSchema], default: [] },
+    draftPairOrder: { type: [mongoose_1.Schema.Types.ObjectId], default: undefined },
     startDate: { type: Date, required: true },
     description: { type: String },
     matches: [{ type: mongoose_1.default.Schema.Types.ObjectId, ref: "Match" }],
+    playerStats: { type: [PlayerStatSchema], default: [] },
+    pointsAwarded: { type: Boolean, default: false },
     status: {
         type: String,
         enum: ['upcoming', 'in_progress', 'completed'],
