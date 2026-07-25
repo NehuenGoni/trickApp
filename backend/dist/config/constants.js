@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SLOT_TO_POSITION = exports.POINTS_TABLE = exports.MAX_SCORE = exports.TOURNAMENT_TEAMS_COUNT = exports.FORMAT_TEAM_SIZE = exports.TEAM_FORMATION_MODES = exports.TOURNAMENT_FORMATS = exports.TOURNAMENT_TYPES = exports.BRACKET_SLOTS = exports.MATCH_PHASES = exports.MATCH_STATUS = exports.MATCH_TYPES = exports.ADMIN_ROLES = exports.ROLES = exports.FRIENDLY_MATCHES_ID = void 0;
+exports.SLOT_TO_POSITION = exports.POINTS_TABLE = exports.MAX_SCORE = exports.TOURNAMENT_TEAMS_COUNT = exports.FORMAT_TEAM_SIZE = exports.TEAM_FORMATION_MODES = exports.TOURNAMENT_FORMATS = exports.TOURNAMENT_TYPES = exports.BRACKET_SLOTS = exports.MATCH_PHASES = exports.MATCH_STATUS = exports.MATCH_TYPES = exports.PASSWORD_RESET_TTL_MINUTES = exports.MIN_PASSWORD_LENGTH = exports.ADMIN_ROLES = exports.ROLES = exports.FRIENDLY_MATCHES_ID = void 0;
 exports.FRIENDLY_MATCHES_ID = 'friendly_matches';
 exports.ROLES = {
     USER: 'user',
@@ -8,6 +8,9 @@ exports.ROLES = {
     SUPERADMIN: 'superadmin'
 };
 exports.ADMIN_ROLES = [exports.ROLES.ADMIN, exports.ROLES.SUPERADMIN];
+exports.MIN_PASSWORD_LENGTH = 6;
+/** Vigencia del enlace de recuperación de contraseña. */
+exports.PASSWORD_RESET_TTL_MINUTES = 60;
 exports.MATCH_TYPES = {
     FRIENDLY: 'friendly',
     TOURNAMENT: 'tournament'

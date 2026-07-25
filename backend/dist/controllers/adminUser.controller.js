@@ -20,7 +20,6 @@ const Match_1 = __importDefault(require("../models/Match"));
 const Tournament_1 = __importDefault(require("../models/Tournament"));
 const constants_1 = require("../config/constants");
 const PUBLIC_FIELDS = "-password";
-const MIN_PASSWORD_LENGTH = 6;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isValidRole = (value) => typeof value === "string" && Object.values(constants_1.ROLES).includes(value);
 const isDuplicateKeyError = (error) => typeof error === "object" && error !== null && error.code === 11000;
@@ -180,15 +179,18 @@ const resetUserPassword = (req, res) => __awaiter(void 0, void 0, void 0, functi
         }
         const generated = !newPassword;
         const password = newPassword !== null && newPassword !== void 0 ? newPassword : generateTempPassword();
-        if (password.length < MIN_PASSWORD_LENGTH) {
+        if (password.length < constants_1.MIN_PASSWORD_LENGTH) {
             return void res.status(400).json({
-                message: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`
+                message: `La contraseña debe tener al menos ${constants_1.MIN_PASSWORD_LENGTH} caracteres`
             });
         }
         // El hook pre-save hashea y marca `passwordChangedAt`, lo que invalida
         // cualquier token que el usuario tuviera activo.
         user.password = password;
         yield user.save();
+        // Los campos de recuperación se cargan con `select: false`, así que se limpian
+        // aparte: un enlace de "olvidé mi contraseña" pendiente ya no debe servir.
+        yield User_1.default.updateOne({ _id: user._id }, { $unset: { passwordResetToken: "", passwordResetExpires: "" } });
         res.status(200).json(Object.assign({ message: `Contraseña de ${user.username} restablecida. Sus sesiones activas se cerraron.` }, (generated ? { temporaryPassword: password } : {})));
     }
     catch (error) {
