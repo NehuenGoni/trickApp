@@ -5,7 +5,8 @@ import { useLiveTournament, LiveTournamentData } from '../../hooks/useLiveTourna
 import SceneTransition from './SceneTransition';
 import SceneLiveMatches, { isSceneVisible as liveMatchesVisible } from './scenes/SceneLiveMatches';
 import SceneBracket, { isSceneVisible as bracketVisible } from './scenes/SceneBracket';
-import SceneStandings, { isSceneVisible as standingsVisible } from './scenes/SceneStandings';
+import SceneTeams, { isSceneVisible as teamsVisible } from './scenes/SceneTeams';
+import { pulseDotSx } from './pulseDot';
 
 const ROTATE_MS = 15000;
 const HELP_HIDE_MS = 5000;
@@ -18,7 +19,7 @@ const TOURNAMENT_TYPE_LABEL: Record<string, string> = {
 };
 
 interface SceneDef {
-  id: 'live' | 'bracket' | 'standings';
+  id: 'live' | 'bracket' | 'teams';
   visible: (data: LiveTournamentData) => boolean;
   render: (data: LiveTournamentData) => React.ReactNode;
 }
@@ -26,7 +27,7 @@ interface SceneDef {
 const SCENES: SceneDef[] = [
   { id: 'live', visible: liveMatchesVisible, render: (d) => <SceneLiveMatches matches={d.matches} /> },
   { id: 'bracket', visible: bracketVisible, render: (d) => <SceneBracket matches={d.matches} /> },
-  { id: 'standings', visible: standingsVisible, render: (d) => <SceneStandings data={d} /> }
+  { id: 'teams', visible: teamsVisible, render: (d) => <SceneTeams data={d} /> }
 ];
 
 const FullscreenMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -212,20 +213,7 @@ const LiveTournament: React.FC = () => {
           />
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-          <Box
-            sx={{
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              bgcolor: liveColor,
-              transition: 'background-color 400ms ease',
-              '@keyframes live-pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.35 }
-              },
-              animation: isDegraded ? 'none' : 'live-pulse 1.8s ease-in-out infinite'
-            }}
-          />
+          <Box sx={pulseDotSx(liveColor, !isDegraded)} />
           <Typography
             noWrap
             sx={{ fontSize: 'clamp(0.65rem, 1vw, 0.85rem)', fontWeight: 700, letterSpacing: 1, color: liveColor }}
@@ -235,7 +223,7 @@ const LiveTournament: React.FC = () => {
         </Box>
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
         {activeScene ? (
           <SceneTransition key={activeScene.id} direction={direction}>
             {activeScene.render(data)}

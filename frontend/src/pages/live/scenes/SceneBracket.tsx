@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 import { LiveMatch, LiveTournamentData } from '../../../hooks/useLiveTournament';
-import { BRACKET_SLOT_ORDER, BRACKET_SLOT_LABELS } from '../../../utils/tournament';
+import { BRACKET_SLOT_ORDER, BRACKET_SLOT_LABELS, getSlotTheme } from '../../../utils/tournament';
 import { getDisplayScore, getScoreStage } from '../../../utils/truco';
 
 export const isSceneVisible = (data: LiveTournamentData): boolean => data.matches.length > 0;
@@ -16,18 +16,20 @@ const SlotCard: React.FC<{ slot: string; match?: LiveMatch }> = ({ slot, match }
   const label = BRACKET_SLOT_LABELS[slot] ?? slot;
   const teams = match?.teams ?? [];
   const isLive = match?.status === 'in_progress';
+  const theme = getSlotTheme(slot);
 
   return (
     <Box
       sx={{
-        bgcolor: 'background.paper',
+        bgcolor: theme.bg,
         borderRadius: 2,
         p: 1.5,
         flexBasis: { xs: '100%', sm: 'calc(50% - 8px)', md: 0 },
         flexGrow: { md: 1 },
         minWidth: 0,
         border: '1px solid',
-        borderColor: isLive ? '#D4AF37' : 'rgba(255,255,255,0.08)',
+        borderColor: isLive ? '#D4AF37' : theme.border,
+        transition: 'background-color 300ms ease, border-color 300ms ease',
         '@keyframes pulse-border': {
           '0%, 100%': { boxShadow: '0 0 0 0 rgba(212,175,55,0.45)' },
           '50%': { boxShadow: '0 0 0 5px rgba(212,175,55,0)' }
@@ -38,7 +40,7 @@ const SlotCard: React.FC<{ slot: string; match?: LiveMatch }> = ({ slot, match }
       <Typography
         noWrap
         sx={{
-          color: 'text.secondary',
+          color: theme.accent,
           textTransform: 'uppercase',
           letterSpacing: 1,
           fontSize: 'clamp(0.6rem, 0.85vw, 0.8rem)',

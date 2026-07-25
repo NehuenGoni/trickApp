@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Grid, Typography } from '@mui/material';
 import { LiveMatch, LiveMatchTeam, LiveTournamentData } from '../../../hooks/useLiveTournament';
 import { getDisplayScore, getScoreStage } from '../../../utils/truco';
-import { PHASE_LABELS } from '../../../utils/tournament';
+import { PHASE_LABELS, getSlotTheme } from '../../../utils/tournament';
 import { usePulseOnChange } from '../usePulseOnChange';
 
 const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
@@ -23,8 +23,19 @@ const TeamScore: React.FC<{ team: LiveMatchTeam }> = ({ team }) => {
         {team.name}
       </Typography>
       {team.players.length > 0 && (
-        <Typography noWrap sx={{ color: 'text.secondary', fontSize: 'clamp(0.7rem, 1vw, 0.95rem)' }}>
-          {team.players.join(' / ')}
+        <Typography
+          sx={{
+            color: 'text.secondary',
+            fontSize: 'clamp(0.65rem, 0.9vw, 0.85rem)',
+            lineHeight: 1.3,
+            // Alto reservado para 2 líneas, en em (escala con el propio
+            // fontSize): así, si un equipo envuelve a 2 líneas y el otro a 1,
+            // los marcadores de ambos quedan a la misma altura igual.
+            minHeight: '2.6em',
+            px: 0.5
+          }}
+        >
+          {team.players.join(' - ')}
         </Typography>
       )}
       <Typography
@@ -59,11 +70,14 @@ const TeamScore: React.FC<{ team: LiveMatchTeam }> = ({ team }) => {
 const MatchCard: React.FC<{ match: LiveMatch }> = ({ match }) => {
   const [a, b] = match.teams;
   if (!a || !b) return null;
+  const theme = getSlotTheme(match.bracketSlot);
 
   return (
     <Box
       sx={{
-        bgcolor: 'background.paper',
+        bgcolor: theme.bg,
+        border: '1px solid',
+        borderColor: theme.border,
         borderRadius: 3,
         p: { xs: 2, md: 3 },
         height: '100%',
@@ -76,7 +90,7 @@ const MatchCard: React.FC<{ match: LiveMatch }> = ({ match }) => {
       <Typography
         align="center"
         sx={{
-          color: 'text.secondary',
+          color: theme.accent,
           textTransform: 'uppercase',
           letterSpacing: 1.5,
           fontSize: 'clamp(0.75rem, 1.1vw, 1rem)'

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Accordion,
@@ -31,7 +31,7 @@ import TvIcon from '@mui/icons-material/Tv';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
-import { PHASE_LABELS, PHASE_ORDER } from '../../utils/tournament';
+import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch } from '../../utils/tournament';
 
 interface PlayerLite {
   playerId?: string;
@@ -153,6 +153,11 @@ const TournamentDetails = () => {
   });
   const [drawing, setDrawing] = useState(false);
 
+  const [expandedPhase, setExpandedPhase] = useState<string | false>(false);
+  const [focusMatchId, setFocusMatchId] = useState<string | null>(null);
+  const autoExpandedForRef = useRef<string | null>(null);
+  const focusMatchRef = useRef<HTMLDivElement | null>(null);
+
   const fetchData = useCallback(async () => {
     if (!id) return;
     try {
@@ -173,6 +178,28 @@ const TournamentDetails = () => {
     fetchData();
   }, [fetchData]);
 
+  // Auto-abre la fase con el partido relevante (el tuyo si sos jugador, si no
+  // la rama más avanzada) una sola vez por torneo, para no pisar la elección
+  // manual del usuario en refetchs posteriores (inscripciones, sorteo, etc.).
+  useEffect(() => {
+    if (loading || !tournament || matches.length === 0) return;
+    if (autoExpandedForRef.current === tournament._id) return;
+    autoExpandedForRef.current = tournament._id;
+    const focus = findFocusMatch(matches, currentUserId);
+    if (!focus) return;
+    setExpandedPhase(focus.phase);
+    if (isPlayerInMatch(focus, currentUserId)) setFocusMatchId(focus._id);
+  }, [loading, tournament, matches, currentUserId]);
+
+  // Deja terminar la animación de expansión del Accordion (~300ms) antes de
+  // scrollear, si no el destino se calcula sobre una posición que se mueve.
+  useEffect(() => {
+    if (!focusMatchId || !focusMatchRef.current) return;
+    const el = focusMatchRef.current;
+    const t = setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350);
+    return () => clearTimeout(t);
+  }, [focusMatchId]);
+
   const isCreator = !!tournament && tournament.createdBy === currentUserId;
   const teamSize = tournament ? TEAM_SIZE[tournament.format] : 2;
   const targetIndividuals = tournament ? 8 * TEAM_SIZE[tournament.format] : 16;
@@ -190,6 +217,17 @@ const TournamentDetails = () => {
   // Los equipos "fijos" son los precargados a mano por el creador (addGuestTeam).
   // Los "sorteados" (isDrawn) salen de un /draw sobre el mismo pool de individualSignups,
   // así que no se suman aparte o los jugadores quedarían contados dos veces.
+  // IDs que ya están en el torneo: inscriptos sueltos + jugadores de cualquier equipo.
+  // Espeja isUserAlreadyInTournament del backend (tournament.controller.ts).
+  const registeredUserIds = new Set<string>(
+    tournament
+      ? [
+          ...tournament.individualSignups.map((s) => s.userId),
+          ...tournament.teams.flatMap((t) => t.players.map((p) => p.playerId))
+        ].filter((v): v is string => !!v)
+      : []
+  );
+
   const fixedTeams = tournament ? tournament.teams.filter((t) => !t.isDrawn) : [];
   const drawnTeams = tournament ? tournament.teams.filter((t) => t.isDrawn) : [];
   const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === 8;
@@ -225,6 +263,12 @@ const TournamentDetails = () => {
       ? slotsFilled === targetIndividuals
       : tournament.teams.length === 8
     : false;
+
+  // Cupos libres para el modal "Agregar jugador": slotsFilled ya cuenta a los
+  // inscriptos actuales, así que lo que se elija en el modal no puede superar esto.
+  const remainingSlots = Math.max(0, totalSlots - slotsFilled);
+  const creatorAddPlayerCount = creatorSelectedPlayers.length + creatorGuestNames.length;
+  const creatorAddPlayerFull = creatorAddPlayerCount >= remainingSlots;
 
   const searchUsers = async (q: string) => {
     if (!q.trim()) {
@@ -380,13 +424,24 @@ const TournamentDetails = () => {
 
   const handleCreatorAddPlayer = async () => {
     if (!id) return;
-    if (creatorSelectedPlayers.length === 0 && creatorGuestNames.length === 0) return;
+    const dedupedIds = Array.from(
+      new Set(creatorSelectedPlayers.map((p) => p._id))
+    ).filter((uid) => !registeredUserIds.has(uid));
+    if (dedupedIds.length === 0 && creatorGuestNames.length === 0) {
+      setError('Esos jugadores ya están inscriptos');
+      return;
+    }
+    if (dedupedIds.length + creatorGuestNames.length > remainingSlots) {
+      setError('No hay cupo suficiente en el torneo para agregar a todos');
+      return;
+    }
+    const userIds = dedupedIds;
     setError('');
     try {
       await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
         method: 'POST',
         body: JSON.stringify({
-          userIds: creatorSelectedPlayers.map((p) => p._id),
+          userIds,
           guestNames: creatorGuestNames
         })
       });
@@ -405,7 +460,7 @@ const TournamentDetails = () => {
 
   const handleAddCreatorGuestName = () => {
     const name = creatorGuestNameInput.trim();
-    if (!name) return;
+    if (!name || creatorAddPlayerFull) return;
     setCreatorGuestNames([...creatorGuestNames, name]);
     setCreatorGuestNameInput('');
   };
@@ -493,8 +548,7 @@ const TournamentDetails = () => {
 
   const handlePlay = (matchId: string) => navigate(`/matches/scoreboard/${matchId}`);
 
-  const isUserInMatch = (m: Match) =>
-    m.teams.some((t) => t.players.some((p) => p.playerId === currentUserId));
+  const isUserInMatch = (m: Match) => isPlayerInMatch(m, currentUserId);
 
   const renderParticipants = (teamId: string) => {
     const team = tournament?.teams.find((t) => t.teamId === teamId);
@@ -525,10 +579,19 @@ const TournamentDetails = () => {
   const renderMatchCard = (match: Match) => {
     const userInMatch = isUserInMatch(match);
     const pending = match.status === 'pending' || match.teams.length < 2;
+    const isFocus = match._id === focusMatchId;
 
     return (
-      <Grid item xs={12} key={match._id}>
-        <Paper sx={{ p: 2 }}>
+      <Grid item xs={12} key={match._id} ref={isFocus ? focusMatchRef : undefined}>
+        <Paper
+          sx={{
+            p: 2,
+            ...(isFocus && {
+              border: '2px solid #fbc02d',
+              boxShadow: '0 0 0 4px rgba(251,192,45,0.15)'
+            })
+          }}
+        >
           <Box
             sx={{
               display: 'flex',
@@ -542,23 +605,32 @@ const TournamentDetails = () => {
                 ? 'A definir'
                 : `${match.teams[0]?.score ?? 0} - ${match.teams[1]?.score ?? 0}`}
             </Typography>
-            <Chip
-              label={
-                match.status === 'in_progress'
-                  ? 'En progreso'
-                  : match.status === 'finished'
-                  ? 'Finalizado'
-                  : 'Pendiente'
-              }
-              color={
-                match.status === 'in_progress'
-                  ? 'warning'
-                  : match.status === 'finished'
-                  ? 'success'
-                  : 'default'
-              }
-              size="small"
-            />
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {isFocus && (
+                <Chip
+                  label="Tu partido"
+                  size="small"
+                  sx={{ backgroundColor: '#fbc02d', color: '#000', fontWeight: 'bold' }}
+                />
+              )}
+              <Chip
+                label={
+                  match.status === 'in_progress'
+                    ? 'En progreso'
+                    : match.status === 'finished'
+                    ? 'Finalizado'
+                    : 'Pendiente'
+                }
+                color={
+                  match.status === 'in_progress'
+                    ? 'warning'
+                    : match.status === 'finished'
+                    ? 'success'
+                    : 'default'
+                }
+                size="small"
+              />
+            </Box>
           </Box>
 
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
@@ -895,7 +967,10 @@ const TournamentDetails = () => {
                 if (isEmpty(phaseMatches)) return null;
                 return (
                   <Box sx={{ mb: 2 }} key={phase}>
-                    <Accordion>
+                    <Accordion
+                      expanded={expandedPhase === phase}
+                      onChange={(_, isExpanded) => setExpandedPhase(isExpanded ? phase : false)}
+                    >
                       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Typography fontWeight="bold">{PHASE_LABELS[phase]}</Typography>
                       </AccordionSummary>
@@ -1083,15 +1158,40 @@ const TournamentDetails = () => {
               Al sortear, los invitados se agrupan entre ellos antes de completar equipos
               con jugadores registrados.
             </Typography>
+            <Typography
+              variant="body2"
+              color={creatorAddPlayerFull ? 'error' : 'text.secondary'}
+              sx={{ mb: 1 }}
+            >
+              {creatorAddPlayerFull
+                ? 'Llegaste al cupo del torneo: no podés agregar más jugadores ni invitados.'
+                : `Cupos disponibles: ${remainingSlots - creatorAddPlayerCount} de ${remainingSlots}`}
+            </Typography>
             <Autocomplete
               multiple
               options={creatorPlayerOptions}
               loading={searchingCreatorPlayer}
               getOptionLabel={(o) => o.username}
               value={creatorSelectedPlayers}
-              onChange={(_, v) => setCreatorSelectedPlayers(v)}
+              onChange={(_, v) => {
+                if (v.length + creatorGuestNames.length <= remainingSlots) setCreatorSelectedPlayers(v);
+              }}
               onInputChange={(_, v) => searchCreatorUsers(v, setCreatorPlayerOptions, setSearchingCreatorPlayer)}
               isOptionEqualToValue={(o, v) => o._id === v._id}
+              filterOptions={(opts) =>
+                creatorAddPlayerFull
+                  ? []
+                  : opts.filter(
+                      (o) =>
+                        !registeredUserIds.has(o._id) &&
+                        !creatorSelectedPlayers.some((p) => p._id === o._id)
+                    )
+              }
+              noOptionsText={
+                creatorAddPlayerFull
+                  ? 'Cupo completo'
+                  : 'Sin resultados nuevos (los ya inscriptos y los seleccionados no se muestran)'
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -1107,6 +1207,7 @@ const TournamentDetails = () => {
                 label="Nombre del invitado"
                 value={creatorGuestNameInput}
                 onChange={(e) => setCreatorGuestNameInput(e.target.value)}
+                disabled={creatorAddPlayerFull}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1114,7 +1215,7 @@ const TournamentDetails = () => {
                   }
                 }}
               />
-              <Button variant="outlined" onClick={handleAddCreatorGuestName}>
+              <Button variant="outlined" onClick={handleAddCreatorGuestName} disabled={creatorAddPlayerFull}>
                 Agregar
               </Button>
             </Box>
