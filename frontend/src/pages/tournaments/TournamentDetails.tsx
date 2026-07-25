@@ -229,7 +229,6 @@ const TournamentDetails = () => {
   );
 
   const fixedTeams = tournament ? tournament.teams.filter((t) => !t.isDrawn) : [];
-  const drawnTeams = tournament ? tournament.teams.filter((t) => t.isDrawn) : [];
   const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === 8;
 
   const drawPairings: Array<[Team, Team]> = (() => {
