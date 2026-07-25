@@ -18,6 +18,8 @@ interface IUser {
   totalPoints: number;
   role: UserRole;
   passwordChangedAt?: Date;
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
   pointsAdjustments: IPointsAdjustment[];
   comparePassword(password: string): Promise<boolean>
 }
@@ -40,6 +42,10 @@ const userSchema = new mongoose.Schema<IUser>({
     default: ROLES.USER
   },
   passwordChangedAt: { type: Date },
+  // Se guarda el hash del token de recuperación, nunca el valor que viaja al mail:
+  // si alguien lee la base no puede reconstruir el enlace.
+  passwordResetToken: { type: String, select: false, index: true, sparse: true },
+  passwordResetExpires: { type: Date, select: false },
   pointsAdjustments: { type: [pointsAdjustmentSchema], default: [] },
 }, { timestamps: true });
 

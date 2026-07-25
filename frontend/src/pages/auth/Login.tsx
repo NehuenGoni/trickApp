@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import { clearCurrentUserCache } from '../../hooks/useCurrentUser';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -48,7 +49,9 @@ const Login = () => {
 
       localStorage.setItem('token', data.token);
       localStorage.setItem('userId', data.userId);
-      
+      // Descarta el perfil cacheado de una sesión anterior.
+      clearCurrentUserCache();
+
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en el inicio de sesión');
@@ -143,6 +146,15 @@ const Login = () => {
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : "Login"}
             </Button>
+            <Box sx={{ textAlign: "center" }}>
+              <Link
+                href="/forgot-password"
+                variant="body2"
+                sx={{ color: "secondary.main", fontWeight: 500 }}
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </Box>
             <Box sx={{ textAlign: "center", mt: 2 }}>
               <Link
                 href="/register"

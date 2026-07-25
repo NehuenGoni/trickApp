@@ -5,6 +5,8 @@ const API_ROUTES = {
     LOGIN: `${API_BASE_URL}/auth/login`,
     REGISTER: `${API_BASE_URL}/auth/register`,
     PROFILE: `${API_BASE_URL}/auth/profile`,
+    FORGOT_PASSWORD: `${API_BASE_URL}/auth/forgot-password`,
+    RESET_PASSWORD: (token: string) => `${API_BASE_URL}/auth/reset-password/${token}`,
   },
   USERS: {
     LIST: `${API_BASE_URL}/users`,

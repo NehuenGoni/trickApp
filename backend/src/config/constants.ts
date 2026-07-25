@@ -8,6 +8,11 @@ export const ROLES = {
 
 export const ADMIN_ROLES = [ROLES.ADMIN, ROLES.SUPERADMIN];
 
+export const MIN_PASSWORD_LENGTH = 6;
+
+/** Vigencia del enlace de recuperación de contraseña. */
+export const PASSWORD_RESET_TTL_MINUTES = 60;
+
 export const MATCH_TYPES = {
   FRIENDLY: 'friendly',
   TOURNAMENT: 'tournament'
