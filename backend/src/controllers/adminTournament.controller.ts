@@ -598,7 +598,7 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
         .sort({ totalPoints: -1 })
         .limit(5),
       TournamentModel.find()
-        .select("name status startDate createdAt teams individualSignups")
+        .select("name status startDate createdAt teams individualSignups logo")
         .sort({ createdAt: -1 })
         .limit(5)
     ]);

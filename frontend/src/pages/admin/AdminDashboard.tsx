@@ -8,6 +8,7 @@ import {
   CircularProgress,
   List,
   ListItem,
+  ListItemAvatar,
   ListItemText,
   Chip,
   Divider
@@ -21,6 +22,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoMeta } from '../../types/tournament';
 
 interface AdminStats {
   users: { total: number; newLast30Days: number };
@@ -32,6 +35,7 @@ interface AdminStats {
     name: string;
     status: 'upcoming' | 'in_progress' | 'completed';
     startDate: string;
+    logo?: TournamentLogoMeta | null;
   }>;
 }
 
@@ -177,6 +181,9 @@ const AdminDashboard = () => {
                           <Chip size="small" label={STATUS_LABEL[tournament.status]} />
                         }
                       >
+                        <ListItemAvatar sx={{ minWidth: 44 }}>
+                          <TournamentLogo tournament={tournament} size={32} />
+                        </ListItemAvatar>
                         <ListItemText
                           primary={tournament.name}
                           secondary={new Date(tournament.startDate).toLocaleDateString('es-AR')}

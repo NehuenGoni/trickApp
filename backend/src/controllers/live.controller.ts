@@ -94,7 +94,11 @@ export const getTournamentLive = async (req: Request, res: Response): Promise<vo
         format: tournament.format,
         status: tournament.status,
         startDate: tournament.startDate,
-        description: tournament.description
+        description: tournament.description,
+        // Solo metadata: el binario se pide aparte a `/tournaments/:id/logo`.
+        // Cambiar el logo hace `save()` en el torneo, así que mueve `updatedAt`
+        // y con eso la `version` del polling: la proyección lo ve al instante.
+        logo: tournament.logo ?? null
       },
       teams,
       matches: formattedMatches,

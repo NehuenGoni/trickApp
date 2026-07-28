@@ -40,6 +40,17 @@ export interface IPlayerStat {
   points: number;
 }
 
+/**
+ * Metadata del logo. El binario vive en la colección `tournamentlogos`
+ * (ver `models/TournamentLogo.ts`); acá solo queda lo necesario para armar
+ * la URL con cache buster sin un round-trip extra.
+ */
+export interface ITournamentLogoMeta {
+  version: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface ITournament extends Document {
   name: string;
   createdBy: mongoose.Types.ObjectId;
@@ -58,6 +69,7 @@ export interface ITournament extends Document {
   startDate: Date;
   description?: string;
   status: 'upcoming' | 'in_progress' | 'completed';
+  logo?: ITournamentLogoMeta | null;
 }
 
 const PlayerSchema = new Schema<IPlayer>({
@@ -97,6 +109,12 @@ const PlayerStatSchema = new Schema<IPlayerStat>({
   isGuest: { type: Boolean, default: false },
   position: { type: Number, required: true, min: 1, max: 8 },
   points: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+const LogoMetaSchema = new Schema<ITournamentLogoMeta>({
+  version: { type: String, required: true },
+  mimeType: { type: String, required: true },
+  size: { type: Number, required: true }
 }, { _id: false });
 
 const tournamentSchema = new Schema<ITournament>(
@@ -140,6 +158,9 @@ const tournamentSchema = new Schema<ITournament>(
       enum: ['upcoming', 'in_progress', 'completed'],
       default: 'upcoming'
     },
+    // Los torneos creados antes de esta feature simplemente no tienen el campo:
+    // se leen como `null` y el frontend cae al fallback de iniciales.
+    logo: { type: LogoMetaSchema, default: null },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "tournaments", timestamps: true }

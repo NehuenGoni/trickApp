@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
+import { getInitials } from '../utils/text';
 import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
@@ -72,13 +73,6 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     localStorage.removeItem('token');
     clearCurrentUserCache();
     navigate('/login');
-  };
-
-  const getInitials = (name: string) => {
-    if (!name) return '';
-    const parts = name.trim().split(' ');
-    if (parts.length === 1) return parts[0][0].toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
   };
 
   const menuItems: AppMenuItem[] = [

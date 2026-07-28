@@ -78,6 +78,24 @@ export const TOURNAMENT_TEAMS_COUNT = 8;
 
 export const MAX_SCORE = 30;
 
+/**
+ * Límites del logo de torneo.
+ * El cliente redimensiona a 512px WebP antes de subir (~45 KB), así que 300 KB
+ * deja margen de sobra y a la vez corta cualquier intento de subir el original.
+ */
+export const MAX_LOGO_BYTES = 300 * 1024;
+
+/** Tope de ancho/alto, validado leyendo el header sin decodificar la imagen. */
+export const MAX_LOGO_DIMENSION = 1024;
+
+export const ALLOWED_LOGO_MIME_TYPES = [
+  'image/webp',
+  'image/png',
+  'image/jpeg'
+] as const;
+
+export type AllowedLogoMimeType = typeof ALLOWED_LOGO_MIME_TYPES[number];
+
 export const POINTS_TABLE = {
   'grand-slam': {
     1: 25,

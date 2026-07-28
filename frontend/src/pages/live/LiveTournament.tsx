@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom';
 import { Alert, Box, Chip, CircularProgress, Typography } from '@mui/material';
 import { useLiveTournament, LiveTournamentData } from '../../hooks/useLiveTournament';
+import TournamentLogo from '../../components/TournamentLogo';
 import SceneTransition from './SceneTransition';
 import SceneLiveMatches, { isSceneVisible as liveMatchesVisible } from './scenes/SceneLiveMatches';
 import SceneBracket, { isSceneVisible as bracketVisible } from './scenes/SceneBracket';
@@ -233,6 +234,11 @@ const LiveTournament: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <TournamentLogo
+            tournament={data.tournament}
+            size={72}
+            sx={{ width: { xs: 48, md: 72 }, height: { xs: 48, md: 72 } }}
+          />
           <Typography
             noWrap
             sx={{

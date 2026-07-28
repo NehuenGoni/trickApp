@@ -34,12 +34,16 @@ import {
 } from '@mui/icons-material';
 import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import TournamentLogo from '../../components/TournamentLogo';
+import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import { TournamentLogoMeta } from '../../types/tournament';
 
 type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';
 
 interface AdminTournament {
   _id: string;
   name: string;
+  logo?: TournamentLogoMeta | null;
   description?: string;
   startDate: string;
   status: TournamentStatus;
@@ -373,16 +377,19 @@ const AdminTournaments = () => {
                   mb: 1
                 }}
               >
-                <Box>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    {tournament.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(tournament.startDate).toLocaleDateString('es-AR')}
-                    {typeof tournament.createdBy === 'object' && tournament.createdBy
-                      ? ` · Organiza ${tournament.createdBy.username}`
-                      : ''}
-                  </Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', minWidth: 0 }}>
+                  <TournamentLogo tournament={tournament} size={40} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {tournament.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(tournament.startDate).toLocaleDateString('es-AR')}
+                      {typeof tournament.createdBy === 'object' && tournament.createdBy
+                        ? ` · Organiza ${tournament.createdBy.username}`
+                        : ''}
+                    </Typography>
+                  </Box>
                 </Box>
                 <Chip
                   size="small"
@@ -493,6 +500,19 @@ const AdminTournaments = () => {
         <DialogTitle>Editar torneo</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* El logo se guarda al instante por su propio endpoint, sin pasar
+                por "Guardar" ni por las restricciones del resto del formulario. */}
+            {editTarget && (
+              <TournamentLogoUploader
+                tournamentId={editTarget._id}
+                logo={editTarget.logo}
+                size={72}
+                onUploaded={(logo) => {
+                  setEditTarget((prev) => (prev ? { ...prev, logo } : prev));
+                  fetchTournaments();
+                }}
+              />
+            )}
             <TextField
               label="Nombre"
               value={editForm.name}

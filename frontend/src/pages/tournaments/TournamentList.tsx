@@ -26,10 +26,14 @@ import {
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import useCurrentUser from '../../hooks/useCurrentUser';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoMeta } from '../../types/tournament';
 
 interface Tournament {
   _id: string;
   name: string;
+  logo?: TournamentLogoMeta | null;
   description: string;
   startDate: string;
   status: 'upcoming' | 'in_progress' | 'completed';
@@ -51,9 +55,11 @@ interface Tournament {
 
 const TournamentList = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useCurrentUser();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
 
@@ -79,15 +85,22 @@ const TournamentList = () => {
     if (!selectedTournament) return;
 
     try {
-      await apiRequest(API_ROUTES.TOURNAMENTS.DELETE(selectedTournament), {
-        method: 'DELETE'
-      });
+      // El endpoint público solo deja borrar al creador y nunca un torneo en
+      // curso; el de admin no tiene esos límites y hace la misma cascada.
+      const url = isAdmin
+        ? API_ROUTES.ADMIN.TOURNAMENT(selectedTournament)
+        : API_ROUTES.TOURNAMENTS.DELETE(selectedTournament);
+      // El backend detalla en `message` cuántos partidos y ligas tocó la cascada.
+      const data = await apiRequest(url, { method: 'DELETE' });
       setTournaments(tournaments.filter(t => t._id !== selectedTournament));
+      setSuccess(data?.message || 'Torneo eliminado con éxito');
+      setError('');
       setDeleteDialogOpen(false);
     } catch (err: any) {
       // `apiRequest` lanza un Error con el mensaje del backend (por ejemplo,
       // el rechazo al borrar un torneo en curso), así que hay que mostrarlo.
       setError(err?.message || 'Error al eliminar el torneo');
+      setSuccess('');
       setDeleteDialogOpen(false);
     }
   };
@@ -167,6 +180,12 @@ const TournamentList = () => {
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+              {success}
+            </Alert>
+          )}
+
           {tournaments.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <TrophyIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
@@ -209,15 +228,18 @@ const TournamentList = () => {
                         gap: 2,
                       }}
                     >
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          {tournament.name}
-                        </Typography>
-                        {tournament.description && (
-                          <Typography variant="body2" color="text.secondary">
-                            {tournament.description}
+                      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', minWidth: 0 }}>
+                        <TournamentLogo tournament={tournament} size={48} />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {tournament.name}
                           </Typography>
-                        )}
+                          {tournament.description && (
+                            <Typography variant="body2" color="text.secondary">
+                              {tournament.description}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
 
                       <Chip
@@ -269,7 +291,7 @@ const TournamentList = () => {
                   </IconButton>
                   <IconButton
                     title="Eliminar torneo"
-                    disabled={tournament.status === 'completed'}
+                    disabled={!isAdmin && tournament.status === 'completed'}
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedTournament(tournament._id);

@@ -11,6 +11,7 @@ import TournamentModel, {
   IIndividualSignup,
   GuestDrawMode
 } from "../models/Tournament";
+import TournamentLogoModel from "../models/TournamentLogo";
 import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
@@ -1157,6 +1158,10 @@ export const deleteTournamentCascade = async (
   await revertTournamentPoints(tournament, session);
 
   const deleted = await Match.deleteMany({ tournament: tournament._id }, { session });
+
+  // El logo vive en su propia colección, así que no se va con el documento del
+  // torneo: sin este borrado quedan binarios huérfanos en Mongo para siempre.
+  await TournamentLogoModel.deleteOne({ tournamentId: tournament._id }, { session });
 
   // `$pull` de las ligas y, en el mismo update, se corrige `tournamentsPlayed`:
   // `updateUserLeaguePoints` lo sube con `Math.max` y nunca lo baja, así que sin

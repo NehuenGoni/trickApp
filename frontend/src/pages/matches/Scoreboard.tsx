@@ -21,6 +21,8 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 import { useWakeLock } from '../../hooks/useWakeLock';
 import { MAX_SCORE, getScoreStage, getDisplayScore } from '../../utils/truco';
 import { findFocusMatch, BRACKET_SLOT_LABELS } from '../../utils/tournament';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoSource } from '../../types/tournament';
 
 interface Team {
   teamId: string;
@@ -74,6 +76,7 @@ const Scoreboard = () => {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
   const [nextMatch, setNextMatch] = useState<TournamentMatchLite | null>(null);
+  const [tournamentInfo, setTournamentInfo] = useState<TournamentLogoSource | null>(null);
 
   // El valor legacy 'friendly_matches' identificaba amistosos antes de que
   // dejaran de tener tournament seteado; no es un ID de torneo real.
@@ -134,6 +137,34 @@ const Scoreboard = () => {
   useEffect(() => {
     setNextMatch(null);
   }, [matchId]);
+
+  // El match solo guarda el id del torneo, así que el nombre y el logo hay que
+  // pedirlos aparte. Es un único request al montar, no entra en el polling del
+  // marcador; si falla, la cabecera simplemente no muestra el torneo.
+  useEffect(() => {
+    const tournamentId = match?.tournament;
+    if (!isRealTournament || !tournamentId) {
+      setTournamentInfo(null);
+      return;
+    }
+    if (tournamentInfo?._id === tournamentId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiRequest(API_ROUTES.TOURNAMENTS.GET(tournamentId));
+        if (!cancelled && data) {
+          setTournamentInfo({ _id: data._id, name: data.name, logo: data.logo ?? null });
+        }
+      } catch {
+        if (!cancelled) setTournamentInfo(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [match?.tournament, isRealTournament, tournamentInfo?._id]);
 
   // Cuando el partido de torneo termina, buscamos a qué partido avanza el
   // equipo del usuario (feedsWinnerTo/feedsLoserTo). Si el usuario no juega
@@ -506,6 +537,23 @@ const Scoreboard = () => {
         <Typography variant="h4" gutterBottom align="center">
           Partido {match.status === "finished" ? "Terminado" : "en Curso"}
         </Typography>
+
+        {tournamentInfo && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              mb: 2
+            }}
+          >
+            <TournamentLogo tournament={tournamentInfo} size={32} />
+            <Typography variant="body2" color="text.secondary">
+              {tournamentInfo.name}
+            </Typography>
+          </Box>
+        )}
 
         {match.status === "finished" && match.winner && (
           <Alert severity="success" sx={{ mb: 2 }}>

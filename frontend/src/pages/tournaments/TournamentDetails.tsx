@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Accordion,
   AccordionSummary,
@@ -28,8 +28,13 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TvIcon from '@mui/icons-material/Tv';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
+import TournamentLogo from '../../components/TournamentLogo';
+import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import useCurrentUser from '../../hooks/useCurrentUser';
+import { TournamentLogoMeta } from '../../types/tournament';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch } from '../../utils/tournament';
 
@@ -101,6 +106,7 @@ interface Tournament {
   matches: string[];
   playerStats: PlayerStat[];
   pointsAwarded: boolean;
+  logo?: TournamentLogoMeta | null;
 }
 
 interface UserOption {
@@ -112,13 +118,23 @@ const TEAM_SIZE: Record<Tournament['format'], number> = { duos: 2, trios: 3 };
 
 const TournamentDetails = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
+  const { isAdmin } = useCurrentUser();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const currentUserId = localStorage.getItem('userId') || '';
+  const [logoOpen, setLogoOpen] = useState(false);
+
+  // Aviso que puede dejar CreateTournament cuando el torneo se creó bien pero
+  // la subida del logo falló.
+  const navMessage = (location.state as { message?: string } | null)?.message;
+  useEffect(() => {
+    if (navMessage) setError(navMessage);
+  }, [navMessage]);
 
   // El aviso de éxito se descarta solo a los pocos segundos; el de error
   // queda hasta que el usuario lo cierra o una nueva acción lo reemplaza.
@@ -723,9 +739,12 @@ const TournamentDetails = () => {
       <Container maxWidth="md" sx={{ mt: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
-              {tournament.name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+              <TournamentLogo tournament={tournament} size={64} />
+              <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+                {tournament.name}
+              </Typography>
+            </Box>
             {tournament.status !== 'upcoming' && (
               <Button
                 variant="contained"
@@ -788,6 +807,19 @@ const TournamentDetails = () => {
               />
               <Chip size="small" label={`${slotsFilled}/${totalSlots}`} />
             </Box>
+
+            {/* El logo es cosmético, así que se puede cambiar en cualquier
+                estado del torneo, no solo mientras está en 'upcoming'. */}
+            {(isCreator || isAdmin) && (
+              <Button
+                size="small"
+                startIcon={<PhotoCameraIcon />}
+                onClick={() => setLogoOpen(true)}
+                sx={{ mt: 1.5 }}
+              >
+                {tournament.logo ? 'Cambiar logo' : 'Agregar logo'}
+              </Button>
+            )}
           </Box>
 
           {tournament.status === 'upcoming' && (
@@ -1425,6 +1457,25 @@ const TournamentDetails = () => {
                 Confirmar
               </Button>
             )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={logoOpen} onClose={() => setLogoOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Logo del torneo</DialogTitle>
+          <DialogContent>
+            <Box sx={{ pt: 1 }}>
+              <TournamentLogoUploader
+                tournamentId={tournament._id}
+                logo={tournament.logo}
+                label=""
+                onUploaded={(logo) =>
+                  setTournament((prev) => (prev ? { ...prev, logo } : prev))
+                }
+              />
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setLogoOpen(false)}>Listo</Button>
           </DialogActions>
         </Dialog>
       </Container>
