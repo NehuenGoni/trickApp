@@ -120,6 +120,14 @@ const TournamentDetails = () => {
   const [info, setInfo] = useState('');
   const currentUserId = localStorage.getItem('userId') || '';
 
+  // El aviso de éxito se descarta solo a los pocos segundos; el de error
+  // queda hasta que el usuario lo cierra o una nueva acción lo reemplaza.
+  useEffect(() => {
+    if (!info) return;
+    const timer = setTimeout(() => setInfo(''), 5000);
+    return () => clearTimeout(timer);
+  }, [info]);
+
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registerTeamName, setRegisterTeamName] = useState('');
   const [registerMembers, setRegisterMembers] = useState<UserOption[]>([]);
@@ -426,25 +434,37 @@ const TournamentDetails = () => {
 
   const handleCreatorAddPlayer = async () => {
     if (!id) return;
+    // El nombre de invitado tipeado pero no confirmado con Enter/"Agregar" no
+    // debe perderse si el usuario va directo al botón de guardar del diálogo.
+    const pendingGuestName = creatorGuestNameInput.trim();
+    const guestNames = pendingGuestName
+      ? [...creatorGuestNames, pendingGuestName]
+      : creatorGuestNames;
     const dedupedIds = Array.from(
       new Set(creatorSelectedPlayers.map((p) => p._id))
     ).filter((uid) => !registeredUserIds.has(uid));
-    if (dedupedIds.length === 0 && creatorGuestNames.length === 0) {
+    if (dedupedIds.length === 0 && guestNames.length === 0) {
       setError('Esos jugadores ya están inscriptos');
       return;
     }
-    if (dedupedIds.length + creatorGuestNames.length > remainingSlots) {
+    if (dedupedIds.length + guestNames.length > remainingSlots) {
       setError('No hay cupo suficiente en el torneo para agregar a todos');
       return;
     }
     const userIds = dedupedIds;
+    const addedNames = [
+      ...creatorSelectedPlayers
+        .filter((p) => userIds.includes(p._id))
+        .map((p) => p.username),
+      ...guestNames
+    ];
     setError('');
     try {
       await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
         method: 'POST',
         body: JSON.stringify({
           userIds,
-          guestNames: creatorGuestNames
+          guestNames
         })
       });
       setCreatorAddPlayerOpen(false);
@@ -452,7 +472,11 @@ const TournamentDetails = () => {
       setCreatorPlayerOptions([]);
       setCreatorGuestNames([]);
       setCreatorGuestNameInput('');
-      setInfo('Inscriptos agregados');
+      setInfo(
+        addedNames.length === 1
+          ? `Se agregó a ${addedNames[0]}`
+          : `Se agregaron ${addedNames.length} jugadores: ${addedNames.join(', ')}`
+      );
       fetchData();
     } catch (err) {
       const e = err as { message?: string };
@@ -719,8 +743,8 @@ const TournamentDetails = () => {
             )}
           </Box>
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          {info && <Alert severity="success" sx={{ mb: 2 }}>{info}</Alert>}
+          {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+          {info && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setInfo('')}>{info}</Alert>}
 
           <Box sx={{ mb: 3 }}>
             {tournament.description && (
@@ -1210,7 +1234,7 @@ const TournamentDetails = () => {
                 />
               )}
             />
-            <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'flex-start' }}>
               <TextField
                 fullWidth
                 size="small"
@@ -1218,6 +1242,13 @@ const TournamentDetails = () => {
                 value={creatorGuestNameInput}
                 onChange={(e) => setCreatorGuestNameInput(e.target.value)}
                 disabled={creatorAddPlayerFull}
+                color={creatorGuestNameInput.trim() ? 'warning' : undefined}
+                focused={!!creatorGuestNameInput.trim()}
+                helperText={
+                  creatorGuestNameInput.trim()
+                    ? 'Presioná Enter o "Agregar" para sumarlo a la lista'
+                    : ' '
+                }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1257,10 +1288,14 @@ const TournamentDetails = () => {
             </Button>
             <Button
               variant="contained"
-              disabled={creatorSelectedPlayers.length === 0 && creatorGuestNames.length === 0}
+              disabled={
+                creatorSelectedPlayers.length === 0 &&
+                creatorGuestNames.length === 0 &&
+                !creatorGuestNameInput.trim()
+              }
               onClick={handleCreatorAddPlayer}
             >
-              Agregar ({creatorSelectedPlayers.length + creatorGuestNames.length})
+              Agregar ({creatorSelectedPlayers.length + creatorGuestNames.length + (creatorGuestNameInput.trim() ? 1 : 0)})
             </Button>
           </DialogActions>
         </Dialog>
