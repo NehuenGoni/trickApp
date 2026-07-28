@@ -24,7 +24,7 @@ const SlotCard: React.FC<{ slot: string; match?: LiveMatch }> = ({ slot, match }
         bgcolor: theme.bg,
         borderRadius: 2,
         p: 1.5,
-        flexBasis: { xs: '100%', sm: 'calc(50% - 8px)', md: 0 },
+        flexBasis: { xs: 'calc(50% - 4px)', md: 0 },
         flexGrow: { md: 1 },
         minWidth: 0,
         border: '1px solid',

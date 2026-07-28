@@ -25,7 +25,7 @@ const SceneTransition: React.FC<Props> = ({ direction, children }) => {
         width: '100%',
         height: '100%',
         display: 'flex',
-        overflow: 'hidden',
+        overflow: { xs: 'visible', md: 'hidden' },
         '@keyframes scene-in': {
           from: { opacity: 0, transform: `${axis}(${offset}px)` },
           to: { opacity: 1, transform: `${axis}(0px)` }
@@ -37,7 +37,7 @@ const SceneTransition: React.FC<Props> = ({ direction, children }) => {
           igual cuando el contenido entra, pero si es más alto que el
           contenedor el margen colapsa a 0 y se ancla arriba en vez de
           desbordar simétricamente y pisar el header. */}
-      <Box sx={{ width: '100%', margin: 'auto', maxHeight: '100%', overflow: 'hidden' }}>{children}</Box>
+      <Box sx={{ width: '100%', margin: 'auto', maxHeight: { xs: 'none', md: '100%' }, overflow: { xs: 'visible', md: 'hidden' } }}>{children}</Box>
     </Box>
   );
 };

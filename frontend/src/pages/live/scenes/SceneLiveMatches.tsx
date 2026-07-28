@@ -42,7 +42,7 @@ const TeamScore: React.FC<{ team: LiveMatchTeam }> = ({ team }) => {
         sx={{
           fontWeight: 800,
           lineHeight: 1,
-          fontSize: 'clamp(3.5rem, 9vw, 9rem)',
+          fontSize: 'clamp(2rem, 9vw, 9rem)',
           color: stage.color,
           transition: `color 300ms ${EASE}, transform 300ms ${EASE}`,
           transform: pulsing ? 'scale(1.14)' : 'scale(1)',
@@ -137,7 +137,7 @@ const SceneLiveMatches: React.FC<Props> = ({ matches }) => {
       </Typography>
       <Grid container spacing={3}>
         {live.map((m) => (
-          <Grid item xs={12} md={colWidth} key={m._id}>
+          <Grid item xs={12} sm={colWidth} md={colWidth} key={m._id}>
             <MatchCard match={m} />
           </Grid>
         ))}
