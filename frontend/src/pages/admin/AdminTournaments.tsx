@@ -783,7 +783,8 @@ const AdminTournaments = () => {
         <DialogContent>
           <DialogContentText>
             ¿Eliminar <strong>{deleteTarget?.name}</strong> y todos sus partidos? Si el torneo había
-            repartido puntos, se descuentan del ranking global. Esta acción no se puede deshacer.
+            repartido puntos, se descuentan del ranking global, y el torneo se quita de las ligas
+            que lo incluyan. Esta acción no se puede deshacer.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

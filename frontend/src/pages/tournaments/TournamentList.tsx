@@ -84,8 +84,11 @@ const TournamentList = () => {
       });
       setTournaments(tournaments.filter(t => t._id !== selectedTournament));
       setDeleteDialogOpen(false);
-    } catch (err) {
-      setError('Error al eliminar el torneo');
+    } catch (err: any) {
+      // `apiRequest` lanza un Error con el mensaje del backend (por ejemplo,
+      // el rechazo al borrar un torneo en curso), así que hay que mostrarlo.
+      setError(err?.message || 'Error al eliminar el torneo');
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -293,7 +296,9 @@ const TournamentList = () => {
           <DialogTitle>Confirmar Eliminación</DialogTitle>
           <DialogContent>
             <DialogContentText>
-              ¿Estás seguro de que deseas eliminar este torneo? Esta acción no se puede deshacer.
+              ¿Estás seguro de que deseas eliminar este torneo? Se borran también sus partidos,
+              el cuadro y las estadísticas, y se descuentan los puntos que haya otorgado al
+              ranking. Esta acción no se puede deshacer.
             </DialogContentText>
           </DialogContent>
           <DialogActions>
