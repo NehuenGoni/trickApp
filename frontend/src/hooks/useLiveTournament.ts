@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import API_ROUTES from '../config/api';
+import { TournamentLogoMeta } from '../types/tournament';
 
 export interface LivePlayer {
   name: string;
@@ -42,6 +43,7 @@ export interface LiveTournamentInfo {
   status: 'upcoming' | 'in_progress' | 'completed';
   startDate: string;
   description?: string;
+  logo?: TournamentLogoMeta | null;
 }
 
 export interface LiveTournamentData {

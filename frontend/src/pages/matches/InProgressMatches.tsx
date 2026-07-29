@@ -26,6 +26,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoMeta } from '../../types/tournament';
 
 interface Team {
   teamId: {
@@ -44,6 +46,7 @@ interface Match {
   tournament?: {
     _id: string;
     name: string;
+    logo?: TournamentLogoMeta | null;
   };
 }
 
@@ -164,12 +167,21 @@ const InProgressMatches = () => {
                             Creado: {formatDate(match.createdAt)}
                           </Typography>
                           {match.tournament && match.tournament.name && (
-                            <Typography variant="body2" component="div">
-                              Torneo: {match.tournament.name}
-                            </Typography>
+                            <Box
+                              sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5 }}
+                            >
+                              <TournamentLogo tournament={match.tournament} size={24} />
+                              <Typography variant="body2" component="span">
+                                Torneo: {match.tournament.name}
+                              </Typography>
+                            </Box>
                           )}
                         </>
                       }
+                      // El `secondary` se envuelve en un <p> por defecto y acá
+                      // adentro hay Box/Avatar, que son <div>: sin esto queda
+                      // HTML inválido.
+                      secondaryTypographyProps={{ component: 'div' }}
                     />
                     <ListItemSecondaryAction>
                       <IconButton

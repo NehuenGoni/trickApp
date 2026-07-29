@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL
+export const API_BASE_URL = process.env.REACT_APP_API_URL
 
 const API_ROUTES = {
   AUTH: {
@@ -44,6 +44,13 @@ const API_ROUTES = {
       `${API_BASE_URL}/tournaments/${id}/live${since ? `?since=${encodeURIComponent(since)}` : ''}`,
     SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
     SIGNUP_ADMIN_REMOVE: (id: string, signupId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${signupId}`,
+    // El `version` va como query param para invalidar el cache del browser:
+    // el endpoint responde con `Cache-Control: immutable`, así que la única
+    // forma de que refetchee una imagen nueva es que cambie la URL.
+    LOGO: (id: string, version?: string) =>
+      `${API_BASE_URL}/tournaments/${id}/logo${version ? `?v=${encodeURIComponent(version)}` : ''}`,
+    LOGO_UPLOAD: (id: string) => `${API_BASE_URL}/tournaments/${id}/logo`,
+    LOGO_DELETE: (id: string) => `${API_BASE_URL}/tournaments/${id}/logo`,
   },
   ADMIN: {
     STATS: `${API_BASE_URL}/admin/stats`,
@@ -94,8 +101,13 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
     delete (options as any).params;
   }
   
+  // Con FormData el Content-Type lo pone el browser, porque incluye el boundary
+  // que separa las partes del multipart. Forzarlo acá lo dejaría sin boundary y
+  // el servidor no podría parsear el cuerpo.
+  const isFormData = options.body instanceof FormData;
+
   const defaultHeaders = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 

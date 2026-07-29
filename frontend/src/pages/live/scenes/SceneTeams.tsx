@@ -42,24 +42,24 @@ const TeamLine: React.FC<{ row: TeamRow; completed: boolean }> = ({ row, complet
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
         {row.position !== null ? (
           <Typography
-            sx={{ fontWeight: 800, color: medalColor(row.position), fontSize: 'clamp(1.1rem, 3vh, 1.8rem)', minWidth: 44, flexShrink: 0 }}
+            sx={{ fontWeight: 800, color: medalColor(row.position), fontSize: 'clamp(1.1rem, 2.5vw, 1.8rem)', minWidth: { xs: 32, md: 44 }, flexShrink: 0 }}
           >
             {row.position}°
           </Typography>
         ) : (
-          <Box sx={{ minWidth: 44, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ minWidth: { xs: 32, md: 44 }, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
             {row.state === 'playing' && <Box sx={pulseDotSx(PLAYING_COLOR, true)} />}
           </Box>
         )}
         <Box sx={{ minWidth: 0 }}>
           <Typography
             noWrap
-            sx={{ fontWeight: 700, fontSize: 'clamp(1rem, 2.4vh, 1.6rem)', textDecoration: isOut ? 'line-through' : 'none' }}
+            sx={{ fontWeight: 700, fontSize: 'clamp(0.95rem, 2vw, 1.6rem)', textDecoration: isOut ? 'line-through' : 'none' }}
           >
             {row.name}
           </Typography>
           {playersLabel && (
-            <Typography noWrap sx={{ color: 'text.secondary', fontSize: 'clamp(0.8rem, 1.8vh, 1.2rem)' }}>
+            <Typography noWrap sx={{ color: 'text.secondary', fontSize: 'clamp(0.75rem, 1.4vw, 1.2rem)' }}>
               {playersLabel}
             </Typography>
           )}
@@ -68,7 +68,7 @@ const TeamLine: React.FC<{ row: TeamRow; completed: boolean }> = ({ row, complet
 
       <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
         {row.points !== null ? (
-          <Typography sx={{ fontWeight: 700, color: '#D4AF37', fontSize: 'clamp(1rem, 2.4vh, 1.6rem)' }}>
+          <Typography sx={{ fontWeight: 700, color: '#D4AF37', fontSize: 'clamp(0.95rem, 2vw, 1.6rem)' }}>
             {row.points} pts
           </Typography>
         ) : (
@@ -77,7 +77,7 @@ const TeamLine: React.FC<{ row: TeamRow; completed: boolean }> = ({ row, complet
               sx={{
                 color: row.state === 'playing' ? PLAYING_COLOR : 'text.secondary',
                 fontWeight: 600,
-                fontSize: 'clamp(0.75rem, 1.8vh, 1.05rem)',
+                fontSize: 'clamp(0.7rem, 1.4vw, 1.05rem)',
                 textTransform: 'uppercase',
                 letterSpacing: 0.5
               }}

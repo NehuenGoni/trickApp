@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Accordion,
   AccordionSummary,
@@ -28,8 +28,13 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TvIcon from '@mui/icons-material/Tv';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
+import TournamentLogo from '../../components/TournamentLogo';
+import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import useCurrentUser from '../../hooks/useCurrentUser';
+import { TournamentLogoMeta } from '../../types/tournament';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch } from '../../utils/tournament';
 
@@ -101,6 +106,7 @@ interface Tournament {
   matches: string[];
   playerStats: PlayerStat[];
   pointsAwarded: boolean;
+  logo?: TournamentLogoMeta | null;
 }
 
 interface UserOption {
@@ -112,13 +118,31 @@ const TEAM_SIZE: Record<Tournament['format'], number> = { duos: 2, trios: 3 };
 
 const TournamentDetails = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
+  const { isAdmin } = useCurrentUser();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const currentUserId = localStorage.getItem('userId') || '';
+  const [logoOpen, setLogoOpen] = useState(false);
+
+  // Aviso que puede dejar CreateTournament cuando el torneo se creó bien pero
+  // la subida del logo falló.
+  const navMessage = (location.state as { message?: string } | null)?.message;
+  useEffect(() => {
+    if (navMessage) setError(navMessage);
+  }, [navMessage]);
+
+  // El aviso de éxito se descarta solo a los pocos segundos; el de error
+  // queda hasta que el usuario lo cierra o una nueva acción lo reemplaza.
+  useEffect(() => {
+    if (!info) return;
+    const timer = setTimeout(() => setInfo(''), 5000);
+    return () => clearTimeout(timer);
+  }, [info]);
 
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registerTeamName, setRegisterTeamName] = useState('');
@@ -426,25 +450,37 @@ const TournamentDetails = () => {
 
   const handleCreatorAddPlayer = async () => {
     if (!id) return;
+    // El nombre de invitado tipeado pero no confirmado con Enter/"Agregar" no
+    // debe perderse si el usuario va directo al botón de guardar del diálogo.
+    const pendingGuestName = creatorGuestNameInput.trim();
+    const guestNames = pendingGuestName
+      ? [...creatorGuestNames, pendingGuestName]
+      : creatorGuestNames;
     const dedupedIds = Array.from(
       new Set(creatorSelectedPlayers.map((p) => p._id))
     ).filter((uid) => !registeredUserIds.has(uid));
-    if (dedupedIds.length === 0 && creatorGuestNames.length === 0) {
+    if (dedupedIds.length === 0 && guestNames.length === 0) {
       setError('Esos jugadores ya están inscriptos');
       return;
     }
-    if (dedupedIds.length + creatorGuestNames.length > remainingSlots) {
+    if (dedupedIds.length + guestNames.length > remainingSlots) {
       setError('No hay cupo suficiente en el torneo para agregar a todos');
       return;
     }
     const userIds = dedupedIds;
+    const addedNames = [
+      ...creatorSelectedPlayers
+        .filter((p) => userIds.includes(p._id))
+        .map((p) => p.username),
+      ...guestNames
+    ];
     setError('');
     try {
       await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
         method: 'POST',
         body: JSON.stringify({
           userIds,
-          guestNames: creatorGuestNames
+          guestNames
         })
       });
       setCreatorAddPlayerOpen(false);
@@ -452,7 +488,11 @@ const TournamentDetails = () => {
       setCreatorPlayerOptions([]);
       setCreatorGuestNames([]);
       setCreatorGuestNameInput('');
-      setInfo('Inscriptos agregados');
+      setInfo(
+        addedNames.length === 1
+          ? `Se agregó a ${addedNames[0]}`
+          : `Se agregaron ${addedNames.length} jugadores: ${addedNames.join(', ')}`
+      );
       fetchData();
     } catch (err) {
       const e = err as { message?: string };
@@ -699,9 +739,12 @@ const TournamentDetails = () => {
       <Container maxWidth="md" sx={{ mt: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
-              {tournament.name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+              <TournamentLogo tournament={tournament} size={64} />
+              <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+                {tournament.name}
+              </Typography>
+            </Box>
             {tournament.status !== 'upcoming' && (
               <Button
                 variant="contained"
@@ -719,8 +762,8 @@ const TournamentDetails = () => {
             )}
           </Box>
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          {info && <Alert severity="success" sx={{ mb: 2 }}>{info}</Alert>}
+          {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+          {info && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setInfo('')}>{info}</Alert>}
 
           <Box sx={{ mb: 3 }}>
             {tournament.description && (
@@ -764,6 +807,19 @@ const TournamentDetails = () => {
               />
               <Chip size="small" label={`${slotsFilled}/${totalSlots}`} />
             </Box>
+
+            {/* El logo es cosmético, así que se puede cambiar en cualquier
+                estado del torneo, no solo mientras está en 'upcoming'. */}
+            {(isCreator || isAdmin) && (
+              <Button
+                size="small"
+                startIcon={<PhotoCameraIcon />}
+                onClick={() => setLogoOpen(true)}
+                sx={{ mt: 1.5 }}
+              >
+                {tournament.logo ? 'Cambiar logo' : 'Agregar logo'}
+              </Button>
+            )}
           </Box>
 
           {tournament.status === 'upcoming' && (
@@ -1210,7 +1266,7 @@ const TournamentDetails = () => {
                 />
               )}
             />
-            <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'flex-start' }}>
               <TextField
                 fullWidth
                 size="small"
@@ -1218,6 +1274,13 @@ const TournamentDetails = () => {
                 value={creatorGuestNameInput}
                 onChange={(e) => setCreatorGuestNameInput(e.target.value)}
                 disabled={creatorAddPlayerFull}
+                color={creatorGuestNameInput.trim() ? 'warning' : undefined}
+                focused={!!creatorGuestNameInput.trim()}
+                helperText={
+                  creatorGuestNameInput.trim()
+                    ? 'Presioná Enter o "Agregar" para sumarlo a la lista'
+                    : ' '
+                }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1257,10 +1320,14 @@ const TournamentDetails = () => {
             </Button>
             <Button
               variant="contained"
-              disabled={creatorSelectedPlayers.length === 0 && creatorGuestNames.length === 0}
+              disabled={
+                creatorSelectedPlayers.length === 0 &&
+                creatorGuestNames.length === 0 &&
+                !creatorGuestNameInput.trim()
+              }
               onClick={handleCreatorAddPlayer}
             >
-              Agregar ({creatorSelectedPlayers.length + creatorGuestNames.length})
+              Agregar ({creatorSelectedPlayers.length + creatorGuestNames.length + (creatorGuestNameInput.trim() ? 1 : 0)})
             </Button>
           </DialogActions>
         </Dialog>
@@ -1390,6 +1457,25 @@ const TournamentDetails = () => {
                 Confirmar
               </Button>
             )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={logoOpen} onClose={() => setLogoOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Logo del torneo</DialogTitle>
+          <DialogContent>
+            <Box sx={{ pt: 1 }}>
+              <TournamentLogoUploader
+                tournamentId={tournament._id}
+                logo={tournament.logo}
+                label=""
+                onUploaded={(logo) =>
+                  setTournament((prev) => (prev ? { ...prev, logo } : prev))
+                }
+              />
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setLogoOpen(false)}>Listo</Button>
           </DialogActions>
         </Dialog>
       </Container>

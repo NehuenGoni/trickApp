@@ -7,6 +7,7 @@ import {
   Button,
   List,
   IconButton,
+  CardActionArea,
   Chip,
   Dialog,
   DialogTitle,
@@ -20,16 +21,19 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
-  Visibility as ViewIcon,
   EmojiEvents as TrophyIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import useCurrentUser from '../../hooks/useCurrentUser';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoMeta } from '../../types/tournament';
 
 interface Tournament {
   _id: string;
   name: string;
+  logo?: TournamentLogoMeta | null;
   description: string;
   startDate: string;
   status: 'upcoming' | 'in_progress' | 'completed';
@@ -51,9 +55,11 @@ interface Tournament {
 
 const TournamentList = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useCurrentUser();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
 
@@ -79,13 +85,23 @@ const TournamentList = () => {
     if (!selectedTournament) return;
 
     try {
-      await apiRequest(API_ROUTES.TOURNAMENTS.DELETE(selectedTournament), {
-        method: 'DELETE'
-      });
+      // El endpoint público solo deja borrar al creador y nunca un torneo en
+      // curso; el de admin no tiene esos límites y hace la misma cascada.
+      const url = isAdmin
+        ? API_ROUTES.ADMIN.TOURNAMENT(selectedTournament)
+        : API_ROUTES.TOURNAMENTS.DELETE(selectedTournament);
+      // El backend detalla en `message` cuántos partidos y ligas tocó la cascada.
+      const data = await apiRequest(url, { method: 'DELETE' });
       setTournaments(tournaments.filter(t => t._id !== selectedTournament));
+      setSuccess(data?.message || 'Torneo eliminado con éxito');
+      setError('');
       setDeleteDialogOpen(false);
-    } catch (err) {
-      setError('Error al eliminar el torneo');
+    } catch (err: any) {
+      // `apiRequest` lanza un Error con el mensaje del backend (por ejemplo,
+      // el rechazo al borrar un torneo en curso), así que hay que mostrarlo.
+      setError(err?.message || 'Error al eliminar el torneo');
+      setSuccess('');
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -164,6 +180,12 @@ const TournamentList = () => {
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+              {success}
+            </Alert>
+          )}
+
           {tournaments.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <TrophyIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
@@ -185,91 +207,93 @@ const TournamentList = () => {
             <List>
               {tournaments.map((tournament) => (
               <Paper
+                key={tournament._id}
                 elevation={1}
                 sx={{
-                  p: 2,
                   mb: 1.5,
                   border: 1,
                   borderColor: 'divider',
                   borderRadius: 2,
+                  overflow: 'hidden',
                 }}
               >
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    mb: 1,
-                    gap: 2,
-                  }}
-                >
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight="bold">
-                      {tournament.name}
-                    </Typography>
-                    {tournament.description && (
-                      <Typography variant="body2" color="text.secondary">
-                        {tournament.description}
-                      </Typography>
-                    )}
+                <CardActionArea onClick={() => navigate(`/tournaments/${tournament._id}`)}>
+                  <Box sx={{ p: 2 }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        mb: 1,
+                        gap: 2,
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', minWidth: 0 }}>
+                        <TournamentLogo tournament={tournament} size={48} />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {tournament.name}
+                          </Typography>
+                          {tournament.description && (
+                            <Typography variant="body2" color="text.secondary">
+                              {tournament.description}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+
+                      <Chip
+                        size="small"
+                        label={getStatusLabel(tournament.status)}
+                        sx={getStatusStyles(tournament.status)}
+                      />
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {tournament.type && (
+                        <Chip size="small" label={getTypeLabel(tournament.type)} />
+                      )}
+                      {tournament.format && (
+                        <Chip
+                          size="small"
+                          label={tournament.format === 'duos' ? 'Duos' : 'Tríos'}
+                        />
+                      )}
+                      <Chip size="small" label={getCapacityLabel(tournament)} />
+                      <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
+                    </Box>
                   </Box>
-
-                  <Chip
-                    size="small"
-                    label={getStatusLabel(tournament.status)}
-                    sx={getStatusStyles(tournament.status)}
-                  />
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                  {tournament.type && (
-                    <Chip size="small" label={getTypeLabel(tournament.type)} />
-                  )}
-                  {tournament.format && (
-                    <Chip
-                      size="small"
-                      label={tournament.format === 'duos' ? 'Duos' : 'Tríos'}
-                    />
-                  )}
-                  <Chip size="small" label={getCapacityLabel(tournament)} />
-                  <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
-                </Box>
+                </CardActionArea>
 
                 <Box
                   sx={{
                     display: 'flex',
                     justifyContent: { xs: 'center', sm: 'flex-end' },
                     gap: 1,
-                    pt: 1,
+                    px: 2,
+                    py: 1,
                     borderTop: 1,
                     borderColor: 'divider',
                   }}
                 >
                   <IconButton
-                    title="Ver detalles"
-                    onClick={() => navigate(`/tournaments/${tournament._id}`)}
-                    sx={{
-                      color: '#D4AF37',
-                      '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
-                    }}
-                  >
-                    <ViewIcon />
-                  </IconButton>
-
-                  <IconButton 
                     title="Editar torneo"
                     sx={{
                       color: '#4f49cd',
                       '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
                     }}
-                   onClick={() => navigate(`/tournaments/${tournament._id}/edit`)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/tournaments/${tournament._id}/edit`);
+                    }}
                   >
                     <EditIcon />
                   </IconButton>
                   <IconButton
                     title="Eliminar torneo"
-                    disabled={tournament.status === 'completed'}
-                    onClick={() => {
+                    disabled={!isAdmin && tournament.status === 'completed'}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setSelectedTournament(tournament._id);
                       setDeleteDialogOpen(true);
                     }}
@@ -294,7 +318,9 @@ const TournamentList = () => {
           <DialogTitle>Confirmar Eliminación</DialogTitle>
           <DialogContent>
             <DialogContentText>
-              ¿Estás seguro de que deseas eliminar este torneo? Esta acción no se puede deshacer.
+              ¿Estás seguro de que deseas eliminar este torneo? Se borran también sus partidos,
+              el cuadro y las estadísticas, y se descuentan los puntos que haya otorgado al
+              ranking. Esta acción no se puede deshacer.
             </DialogContentText>
           </DialogContent>
           <DialogActions>

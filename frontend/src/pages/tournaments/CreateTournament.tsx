@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Avatar,
   Container,
   Paper,
   Typography,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import TournamentLogoUploader from '../../components/TournamentLogoUploader';
 import API_ROUTES, { apiRequest } from '../../config/api';
 
 type TournamentType = 'grand-slam' | 'master-1000';
@@ -53,8 +55,20 @@ const CreateTournament = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // El logo no se puede subir todavía: el endpoint necesita el id del torneo,
+  // que recién existe después del POST. Queda acá hasta entonces.
+  const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   const steps = ['Información del torneo', 'Vista previa'];
+
+  const handleLogoChange = (blob: Blob | null) => {
+    setLogoBlob(blob);
+    setLogoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return blob ? URL.createObjectURL(blob) : null;
+    });
+  };
 
   const handleNext = () => {
     if (activeStep === 0) {
@@ -90,6 +104,29 @@ const CreateTournament = () => {
           guestDrawMode: formData.guestDrawMode
         })
       });
+
+      // El torneo ya existe. Si el logo falla acá, sería absurdo tratarlo como
+      // un error total y dejar al usuario en el formulario creyendo que no se
+      // creó nada: se avisa en el detalle y desde ahí puede reintentar.
+      if (logoBlob) {
+        try {
+          const logoData = new FormData();
+          logoData.append('logo', logoBlob, 'logo.webp');
+          await apiRequest(API_ROUTES.TOURNAMENTS.LOGO_UPLOAD(created._id), {
+            method: 'PUT',
+            body: logoData
+          });
+        } catch {
+          navigate(`/tournaments/${created._id}`, {
+            state: {
+              message:
+                'El torneo se creó, pero el logo no se pudo subir. Podés agregarlo desde acá.'
+            }
+          });
+          return;
+        }
+      }
+
       navigate(`/tournaments/${created._id}`);
     } catch (err) {
       const e = err as { response?: { status?: number }; message?: string };
@@ -174,6 +211,13 @@ const CreateTournament = () => {
                   required
                   margin="normal"
                 />
+
+                <Box sx={{ my: 3 }}>
+                  <TournamentLogoUploader
+                    onChange={handleLogoChange}
+                    label="Logo del torneo (opcional)"
+                  />
+                </Box>
 
                 <Box sx={{ my: 2 }}>
                   <Typography variant="subtitle1" gutterBottom>
@@ -270,6 +314,16 @@ const CreateTournament = () => {
               <Box>
                 <Typography variant="h6" gutterBottom>Vista previa</Typography>
                 <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                  {logoPreview && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                      <Avatar
+                        variant="rounded"
+                        src={logoPreview}
+                        alt="Logo del torneo"
+                        sx={{ width: 96, height: 96 }}
+                      />
+                    </Box>
+                  )}
                   <Typography><b>Nombre:</b> {formData.name}</Typography>
                   {formData.description && (
                     <Typography><b>Descripción:</b> {formData.description}</Typography>

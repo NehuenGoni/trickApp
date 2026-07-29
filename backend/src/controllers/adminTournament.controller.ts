@@ -18,8 +18,10 @@ import {
 import {
   computePlayerStats,
   awardTournamentPoints,
-  revertTournamentPoints
+  revertTournamentPoints,
+  deleteTournamentCascade
 } from "./tournament.controller";
+import { withTransaction } from "../utils/withTransaction";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -308,15 +310,16 @@ export const deleteTournament = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
 
-    // Si el torneo ya había repartido puntos, se descuentan antes de borrarlo
-    // para que el ranking global no quede inflado.
-    await revertTournamentPoints(tournament);
-
-    const deleted = await Match.deleteMany({ tournament: tournament._id });
-    await tournament.deleteOne();
+    // La cascada descuenta los puntos ya otorgados y saca el torneo de las
+    // ligas, para que ni el ranking global ni las tablas queden inflados.
+    const { deletedMatches, leaguesTouched } = await withTransaction((session) =>
+      deleteTournamentCascade(tournament, session)
+    );
 
     res.status(200).json({
-      message: `Torneo "${tournament.name}" eliminado junto con ${deleted.deletedCount} partido(s).`
+      message: `Torneo "${tournament.name}" eliminado junto con ${deletedMatches} partido(s)${
+        leaguesTouched ? ` y quitado de ${leaguesTouched} liga(s)` : ""
+      }.`
     });
   } catch (error: any) {
     res.status(500).json({ message: "Error al eliminar el torneo", error: error.message });
@@ -595,7 +598,7 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
         .sort({ totalPoints: -1 })
         .limit(5),
       TournamentModel.find()
-        .select("name status startDate createdAt teams individualSignups")
+        .select("name status startDate createdAt teams individualSignups logo")
         .sort({ createdAt: -1 })
         .limit(5)
     ]);

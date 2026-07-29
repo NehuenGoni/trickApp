@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
+import mongoose, { ClientSession } from "mongoose";
 import User from "../models/User";
 import Match from "../models/Match";
+import League from "../models/League";
 import TournamentModel, {
   ITournament,
   ITeam,
@@ -10,6 +11,7 @@ import TournamentModel, {
   IIndividualSignup,
   GuestDrawMode
 } from "../models/Tournament";
+import TournamentLogoModel from "../models/TournamentLogo";
 import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
@@ -23,6 +25,7 @@ import {
   MATCH_STATUS,
   MATCH_TYPES
 } from "../config/constants";
+import { withTransaction } from "../utils/withTransaction";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -226,10 +229,21 @@ export const deleteTournament = async (req: AuthRequest, res: Response): Promise
     if (tournament.createdBy.toString() !== req.user) {
       return void res.status(403).json({ message: "Solo el creador puede borrar el torneo" });
     }
+    // Mismo criterio que `deleteMatch`: si no se puede borrar un partido de un
+    // torneo en curso, tampoco el torneo entero. El admin sí puede.
+    if (tournament.status === "in_progress") {
+      return void res.status(400).json({
+        message: "No se puede borrar un torneo en curso"
+      });
+    }
 
-    await Match.deleteMany({ tournament: tournament._id });
-    await tournament.deleteOne();
-    res.status(200).json({ message: "Torneo eliminado con éxito" });
+    const { deletedMatches } = await withTransaction((session) =>
+      deleteTournamentCascade(tournament, session)
+    );
+
+    res.status(200).json({
+      message: `Torneo eliminado junto con ${deletedMatches} partido(s).`
+    });
   } catch (error) {
     res.status(400).json({ message: "Error al eliminar el torneo", error });
   }
@@ -1086,12 +1100,15 @@ export const computePlayerStats = async (
 };
 
 /** Suma al ranking global los puntos de `playerStats`. No persiste el torneo. */
-export const awardTournamentPoints = async (tournament: ITournament): Promise<void> => {
+export const awardTournamentPoints = async (
+  tournament: ITournament,
+  session?: ClientSession
+): Promise<void> => {
   if (tournament.pointsAwarded) return;
   for (const s of tournament.playerStats) {
     if (s.isGuest || !s.playerId) continue;
     if (s.points <= 0) continue;
-    await User.updateOne({ _id: s.playerId }, { $inc: { totalPoints: s.points } });
+    await User.updateOne({ _id: s.playerId }, { $inc: { totalPoints: s.points } }, { session });
   }
   tournament.pointsAwarded = true;
 };
@@ -1101,22 +1118,96 @@ export const awardTournamentPoints = async (tournament: ITournament): Promise<vo
  * Usa un pipeline de update para que `totalPoints` nunca quede negativo.
  * No persiste el torneo.
  */
-export const revertTournamentPoints = async (tournament: ITournament): Promise<void> => {
+export const revertTournamentPoints = async (
+  tournament: ITournament,
+  session?: ClientSession
+): Promise<void> => {
   if (!tournament.pointsAwarded) return;
   for (const s of tournament.playerStats) {
     if (s.isGuest || !s.playerId) continue;
     if (s.points <= 0) continue;
-    await User.updateOne({ _id: s.playerId }, [
+    await User.updateOne(
+      { _id: s.playerId },
+      [
+        {
+          $set: {
+            totalPoints: {
+              $max: [0, { $subtract: [{ $ifNull: ["$totalPoints", 0] }, s.points] }]
+            }
+          }
+        }
+      ],
+      { session }
+    );
+  }
+  tournament.pointsAwarded = false;
+};
+
+/**
+ * Borra el torneo y todo lo que lo referencia: los puntos que repartió al
+ * ranking global, sus partidos y su presencia en las ligas. Lo embebido en el
+ * documento (equipos, inscriptos, `playerStats`) se va con él.
+ *
+ * No abre transacción por su cuenta: quien la llame debería envolverla en
+ * `withTransaction` y pasarle la sesión.
+ */
+export const deleteTournamentCascade = async (
+  tournament: ITournament,
+  session?: ClientSession
+): Promise<{ deletedMatches: number; leaguesTouched: number }> => {
+  await revertTournamentPoints(tournament, session);
+
+  const deleted = await Match.deleteMany({ tournament: tournament._id }, { session });
+
+  // El logo vive en su propia colección, así que no se va con el documento del
+  // torneo: sin este borrado quedan binarios huérfanos en Mongo para siempre.
+  await TournamentLogoModel.deleteOne({ tournamentId: tournament._id }, { session });
+
+  // `$pull` de las ligas y, en el mismo update, se corrige `tournamentsPlayed`:
+  // `updateUserLeaguePoints` lo sube con `Math.max` y nunca lo baja, así que sin
+  // este clamp quedaría contando un torneo que ya no existe.
+  const leagues = await League.updateMany(
+    { tournaments: tournament._id },
+    [
       {
         $set: {
-          totalPoints: {
-            $max: [0, { $subtract: [{ $ifNull: ["$totalPoints", 0] }, s.points] }]
+          tournaments: {
+            $filter: {
+              input: "$tournaments",
+              cond: { $ne: ["$$this", tournament._id] }
+            }
+          }
+        }
+      },
+      {
+        $set: {
+          userStats: {
+            $map: {
+              input: "$userStats",
+              in: {
+                $mergeObjects: [
+                  "$$this",
+                  {
+                    tournamentsPlayed: {
+                      $min: ["$$this.tournamentsPlayed", { $size: "$tournaments" }]
+                    }
+                  }
+                ]
+              }
+            }
           }
         }
       }
-    ]);
-  }
-  tournament.pointsAwarded = false;
+    ],
+    { session }
+  );
+
+  await tournament.deleteOne({ session });
+
+  return {
+    deletedMatches: deleted.deletedCount ?? 0,
+    leaguesTouched: leagues.modifiedCount ?? 0
+  };
 };
 
 export const closeTournament = async (

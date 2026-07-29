@@ -19,7 +19,13 @@ import {
   creatorRemoveSignup
 } from "../controllers/tournament.controller";
 import { getTournamentLive } from "../controllers/live.controller";
+import {
+  getTournamentLogo,
+  uploadTournamentLogo,
+  deleteTournamentLogo
+} from "../controllers/tournamentLogo.controller";
 import authMiddleware from "../middlewares/authMiddleware";
+import uploadLogo from "../middlewares/uploadLogo";
 
 const router = express.Router();
 
@@ -29,6 +35,10 @@ router.get("/open", getOpenTournaments);
 router.get("/:id", getTournamentById);
 router.get("/:id/leaderboard", getTournamentLeaderboard);
 router.get("/:id/live", getTournamentLive);
+// Público a propósito: un `<img src>` no puede mandar el header Authorization.
+router.get("/:id/logo", getTournamentLogo);
+router.put("/:id/logo", authMiddleware, uploadLogo, uploadTournamentLogo);
+router.delete("/:id/logo", authMiddleware, deleteTournamentLogo);
 router.put("/:id", authMiddleware, updateTournament);
 router.delete("/:id", authMiddleware, deleteTournament);
 

@@ -12,6 +12,8 @@ import {
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
+import { getInitials } from '../utils/text';
+import AppLogo from './AppLogo';
 import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
@@ -74,13 +76,6 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     navigate('/login');
   };
 
-  const getInitials = (name: string) => {
-    if (!name) return '';
-    const parts = name.trim().split(' ');
-    if (parts.length === 1) return parts[0][0].toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  };
-
   const menuItems: AppMenuItem[] = [
     { icon: <DashboardIcon fontSize="small" />, label: 'Dashboard', path: '/dashboard' },
     { icon: <PersonIcon fontSize="small" />, label: 'Mi Perfil', path: '/profile' },
@@ -99,17 +94,12 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography 
-          variant="h6" 
-          component="div" 
-          sx={{ 
-            flexGrow: 1,
-            cursor: 'pointer'
-          }}
+        <AppLogo
+          size={32}
+          withText
           onClick={() => navigate('/dashboard')}
-        >
-          TrickApp
-        </Typography>
+          sx={{ flexGrow: 1 }}
+        />
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <Typography variant="body1" sx={{ mr: 2 }}>
             {username}

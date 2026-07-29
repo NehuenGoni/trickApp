@@ -20,6 +20,9 @@ import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { useWakeLock } from '../../hooks/useWakeLock';
 import { MAX_SCORE, getScoreStage, getDisplayScore } from '../../utils/truco';
+import { findFocusMatch, BRACKET_SLOT_LABELS } from '../../utils/tournament';
+import TournamentLogo from '../../components/TournamentLogo';
+import { TournamentLogoSource } from '../../types/tournament';
 
 interface Team {
   teamId: string;
@@ -40,6 +43,23 @@ interface Match {
   winner?: string;
   status: "in_progress" | "finished";
   createdAt: string;
+  type?: 'friendly' | 'tournament';
+  phase?: string;
+  bracketSlot?: string;
+  feedsWinnerTo?: string;
+  feedsLoserTo?: string;
+}
+
+// Partido candidato a "próximo partido" traído de GET /matches/tournament/:id.
+// La forma es compatible con FocusableMatch de utils/tournament, así que se
+// puede pasar directo a findFocusMatch sin castear.
+interface TournamentMatchLite {
+  _id: string;
+  phase: string;
+  status: string;
+  bracketSlot?: string;
+  winner?: string;
+  teams: Array<{ teamId: string; players: Array<{ playerId?: string }> }>;
 }
 
 // Espectadores en /live/:id sondean el estado cada ~2.5s (ver useLiveTournament),
@@ -55,6 +75,12 @@ const Scoreboard = () => {
   //const [teamDetails, setTeamDetails] = useState<{[key: string]: { username: string }}>({})
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [userLogged, setUserLogged] = useState<string>('');
+  const [nextMatch, setNextMatch] = useState<TournamentMatchLite | null>(null);
+  const [tournamentInfo, setTournamentInfo] = useState<TournamentLogoSource | null>(null);
+
+  // El valor legacy 'friendly_matches' identificaba amistosos antes de que
+  // dejaran de tener tournament seteado; no es un ID de torneo real.
+  const isRealTournament = !!match?.tournament && match.tournament !== 'friendly_matches';
 
   // Ref siempre sincronizado con el último estado del match, para que el
   // debounce/flush pueda leer el valor más reciente sin depender del closure.
@@ -78,6 +104,7 @@ const Scoreboard = () => {
 
       setMatch(matchData);
       matchRef.current = matchData;
+      setError('');
 
       const data = await apiRequest(API_ROUTES.AUTH.PROFILE);
       setUserLogged(data.user._id)
@@ -104,6 +131,84 @@ const Scoreboard = () => {
     fetchMatch();
   }, [fetchMatch]);
 
+  // Al navegar de un scoreboard a otro (mismo componente, cambia :matchId)
+  // hay que limpiar el candidato del partido anterior para no arrastrarlo
+  // mientras carga el nuevo.
+  useEffect(() => {
+    setNextMatch(null);
+  }, [matchId]);
+
+  // El match solo guarda el id del torneo, así que el nombre y el logo hay que
+  // pedirlos aparte. Es un único request al montar, no entra en el polling del
+  // marcador; si falla, la cabecera simplemente no muestra el torneo.
+  useEffect(() => {
+    const tournamentId = match?.tournament;
+    if (!isRealTournament || !tournamentId) {
+      setTournamentInfo(null);
+      return;
+    }
+    if (tournamentInfo?._id === tournamentId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiRequest(API_ROUTES.TOURNAMENTS.GET(tournamentId));
+        if (!cancelled && data) {
+          setTournamentInfo({ _id: data._id, name: data.name, logo: data.logo ?? null });
+        }
+      } catch {
+        if (!cancelled) setTournamentInfo(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [match?.tournament, isRealTournament, tournamentInfo?._id]);
+
+  // Cuando el partido de torneo termina, buscamos a qué partido avanza el
+  // equipo del usuario (feedsWinnerTo/feedsLoserTo). Si el usuario no juega
+  // este partido (ej. el creador cargando el score), usamos el helper
+  // findFocusMatch para encontrar el partido que le corresponde en el torneo.
+  useEffect(() => {
+    if (!match || match.status !== 'finished' || !isRealTournament || !userLogged) {
+      return;
+    }
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const list: TournamentMatchLite[] = await apiRequest(
+          API_ROUTES.MATCHES.GET_BY_TOURNAMENT(match.tournament as string)
+        );
+
+        const myTeamId = match.teams.find((t) =>
+          t.players.some((p) => p.playerId === userLogged)
+        )?.teamId;
+
+        let candidate: TournamentMatchLite | undefined;
+        if (myTeamId) {
+          const targetId = myTeamId === match.winner ? match.feedsWinnerTo : match.feedsLoserTo;
+          candidate = targetId ? list.find((m) => m._id === targetId) : undefined;
+        } else {
+          candidate = findFocusMatch(list, userLogged) ?? undefined;
+        }
+
+        if (!cancelled) {
+          setNextMatch(candidate && candidate.status === 'in_progress' ? candidate : null);
+        }
+      } catch (err) {
+        console.error('Error al calcular el próximo partido:', err);
+        if (!cancelled) setNextMatch(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match?.status, match?.tournament, match?.winner, isRealTournament, userLogged]);
+
   // Cancela el debounce pendiente (si existe) y sincroniza el score actual
   // con el backend vía el endpoint liviano de score. Se usa tanto para el
   // guardado diferido normal como para los "flush" forzados (salir, ocultar
@@ -124,6 +229,7 @@ const Scoreboard = () => {
           scores: current.teams.map(t => ({ teamId: t.teamId, score: t.score }))
         })
       });
+      setError('');
     } catch (err) {
       setError('Error al sincronizar la puntuación');
       // Resincroniza el estado local con lo que realmente quedó guardado.
@@ -160,6 +266,7 @@ const Scoreboard = () => {
       });
       setMatch(response);
       matchRef.current = response;
+      setError('');
     } catch (err) {
       setError('Error al actualizar la puntuación');
       fetchMatch();
@@ -218,7 +325,7 @@ const Scoreboard = () => {
     } else {
       await flushPendingScore();
     }
-    navigate('/dashboard');
+    navigate(isRealTournament ? `/tournaments/${match?.tournament}` : '/dashboard');
   };
 
   const handleSaveAndExit = async () => {
@@ -391,8 +498,20 @@ const Scoreboard = () => {
       <Box>
         <NavBar />
         <Container>
-          <Alert severity="info">Cargando datos del partido...</Alert>
-          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+          {error ? (
+            <>
+              <Alert severity="error">{error}</Alert>
+              <Button
+                variant="contained"
+                sx={{ mt: 2 }}
+                onClick={() => { setError(''); fetchMatch(); }}
+              >
+                Reintentar
+              </Button>
+            </>
+          ) : (
+            <Alert severity="info">Cargando datos del partido...</Alert>
+          )}
         </Container>
       </Box>
     );
@@ -420,6 +539,23 @@ const Scoreboard = () => {
           Partido {match.status === "finished" ? "Terminado" : "en Curso"}
         </Typography>
 
+        {tournamentInfo && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              mb: 2
+            }}
+          >
+            <TournamentLogo tournament={tournamentInfo} size={32} />
+            <Typography variant="body2" color="text.secondary">
+              {tournamentInfo.name}
+            </Typography>
+          </Box>
+        )}
+
         {match.status === "finished" && match.winner && (
           <Alert severity="success" sx={{ mb: 2 }}>
             ¡Partido terminado! Ganadores: {formatUsernames()|| 'Equipo Ganador'}
@@ -435,21 +571,37 @@ const Scoreboard = () => {
           </Grid>
         </Grid>
 
-        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             color="primary"
             onClick={handleExit}
           >
-            Volver al Dashboard
+            {isRealTournament ? 'Volver al torneo' : 'Volver al Dashboard'}
           </Button>
-          {match.status === "finished" && (
+          {match.status === "finished" && !isRealTournament && (
             <Button
               variant="contained"
               color="primary"
               onClick={() => navigate('/matches/create')}
             >
               Nuevo Partido
+            </Button>
+          )}
+          {match.status === "finished" && isRealTournament && nextMatch && (
+            <Button
+              variant="contained"
+              sx={{
+                bgcolor: '#D4AF37',
+                color: '#000',
+                '&:hover': { bgcolor: '#c29d2e' },
+              }}
+              onClick={() => navigate(`/matches/scoreboard/${nextMatch._id}`)}
+            >
+              Próximo partido
+              {nextMatch.bracketSlot && BRACKET_SLOT_LABELS[nextMatch.bracketSlot]
+                ? ` · ${BRACKET_SLOT_LABELS[nextMatch.bracketSlot]}`
+                : ''}
             </Button>
           )}
         </Box>

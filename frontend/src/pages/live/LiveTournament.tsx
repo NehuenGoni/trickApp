@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom';
 import { Alert, Box, Chip, CircularProgress, Typography } from '@mui/material';
 import { useLiveTournament, LiveTournamentData } from '../../hooks/useLiveTournament';
+import TournamentLogo from '../../components/TournamentLogo';
 import SceneTransition from './SceneTransition';
 import SceneLiveMatches, { isSceneVisible as liveMatchesVisible } from './scenes/SceneLiveMatches';
 import SceneBracket, { isSceneVisible as bracketVisible } from './scenes/SceneBracket';
@@ -33,8 +34,8 @@ const SCENES: SceneDef[] = [
 const FullscreenMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Box
     sx={{
-      height: '100vh',
-      width: '100vw',
+      minHeight: { xs: '100dvh', md: '100vh' },
+      width: '100%',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -106,6 +107,20 @@ const LiveTournament: React.FC = () => {
     helpTimerRef.current = setTimeout(() => setShowHelp(false), HELP_HIDE_MS);
   }, []);
 
+  const goNext = useCallback(() => {
+    if (!visibleScenes.length) return;
+    setDirection(1);
+    setPaused(true);
+    setActiveIndex((i) => (i + 1) % visibleScenes.length);
+  }, [visibleScenes.length]);
+
+  const goPrev = useCallback(() => {
+    if (!visibleScenes.length) return;
+    setDirection(-1);
+    setPaused(true);
+    setActiveIndex((i) => (i - 1 + visibleScenes.length) % visibleScenes.length);
+  }, [visibleScenes.length]);
+
   useEffect(() => {
     revealHelp();
 
@@ -115,15 +130,10 @@ const LiveTournament: React.FC = () => {
         toggleFullscreen();
         return;
       }
-      if (!visibleScenes.length) return;
       if (e.key === 'ArrowRight') {
-        setDirection(1);
-        setPaused(true);
-        setActiveIndex((i) => (i + 1) % visibleScenes.length);
+        goNext();
       } else if (e.key === 'ArrowLeft') {
-        setDirection(-1);
-        setPaused(true);
-        setActiveIndex((i) => (i - 1 + visibleScenes.length) % visibleScenes.length);
+        goPrev();
       } else if (e.key === ' ') {
         e.preventDefault();
         setPaused((p) => !p);
@@ -138,7 +148,28 @@ const LiveTournament: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       if (helpTimerRef.current) clearTimeout(helpTimerRef.current);
     };
-  }, [visibleScenes.length, revealHelp, toggleFullscreen]);
+  }, [revealHelp, toggleFullscreen, goNext, goPrev]);
+
+  // Swipe táctil: navegación entre escenas para pantallas sin teclado.
+  const touchStartXRef = useRef<number | null>(null);
+  const SWIPE_THRESHOLD_PX = 50;
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0]?.clientX ?? null;
+    revealHelp();
+  }, [revealHelp]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+    if (startX === null) return;
+    const endX = e.changedTouches[0]?.clientX;
+    if (endX === undefined) return;
+    const delta = endX - startX;
+    if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
+    if (delta < 0) goNext();
+    else goPrev();
+  }, [goNext, goPrev]);
 
   if (!tournamentId) {
     return (
@@ -176,9 +207,15 @@ const LiveTournament: React.FC = () => {
   return (
     <Box
       sx={{
-        height: '100vh',
-        width: '100vw',
-        overflow: 'hidden',
+        // En desktop/proyector se mantiene la pantalla completa fija sin
+        // scroll (height + overflow hidden, igual que siempre). En celular
+        // la altura es libre: si el contenido no entra, la página scrollea
+        // en vez de recortarse.
+        height: { xs: 'auto', md: '100vh' },
+        minHeight: { xs: '100dvh', md: '100vh' },
+        width: '100%',
+        overflowY: { xs: 'visible', md: 'hidden' },
+        overflowX: 'hidden',
         bgcolor: 'background.default',
         display: 'flex',
         flexDirection: 'column'
@@ -189,6 +226,7 @@ const LiveTournament: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: { xs: 'wrap', md: 'nowrap' },
           px: { xs: 2, md: 4 },
           py: 2,
           flexShrink: 0,
@@ -196,6 +234,11 @@ const LiveTournament: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <TournamentLogo
+            tournament={data.tournament}
+            size={72}
+            sx={{ width: { xs: 48, md: 72 }, height: { xs: 48, md: 72 } }}
+          />
           <Typography
             noWrap
             sx={{
@@ -223,7 +266,19 @@ const LiveTournament: React.FC = () => {
         </Box>
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          overflowY: { xs: 'visible', md: 'hidden' },
+          overflowX: 'hidden',
+          py: { xs: 2, md: 0 }
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {activeScene ? (
           <SceneTransition key={activeScene.id} direction={direction}>
             {activeScene.render(data)}
@@ -263,8 +318,11 @@ const LiveTournament: React.FC = () => {
             ))}
           </Box>
         )}
-        <Typography sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+        <Typography sx={{ color: 'text.secondary', fontSize: '0.75rem', display: { xs: 'none', md: 'block' } }}>
           F pantalla completa · ← → cambiar escena · Espacio pausar
+        </Typography>
+        <Typography sx={{ color: 'text.secondary', fontSize: '0.75rem', display: { xs: 'block', md: 'none' } }}>
+          Deslizá para cambiar de escena
         </Typography>
       </Box>
     </Box>
