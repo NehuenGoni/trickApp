@@ -13,6 +13,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
 import { getInitials } from '../utils/text';
+import AppLogo from './AppLogo';
 import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
@@ -93,17 +94,12 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography 
-          variant="h6" 
-          component="div" 
-          sx={{ 
-            flexGrow: 1,
-            cursor: 'pointer'
-          }}
+        <AppLogo
+          size={32}
+          withText
           onClick={() => navigate('/dashboard')}
-        >
-          TrickApp
-        </Typography>
+          sx={{ flexGrow: 1 }}
+        />
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <Typography variant="body1" sx={{ mr: 2 }}>
             {username}

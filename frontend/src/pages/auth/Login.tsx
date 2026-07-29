@@ -13,6 +13,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { clearCurrentUserCache } from '../../hooks/useCurrentUser';
+import AppLogo from '../../components/AppLogo';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -81,9 +82,13 @@ const Login = () => {
             boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
           }}
         >
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+            <AppLogo size={72} />
+          </Box>
+
           <Typography
-            variant="h5" 
-            align="center" 
+            variant="h5"
+            align="center"
             sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
           >
             Iniciar Sesión

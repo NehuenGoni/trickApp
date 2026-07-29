@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import AppLogo from '../../components/AppLogo';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -93,9 +94,13 @@ const Register = () => {
             boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
           }}
         >
-          <Typography 
-            variant="h5" 
-            align="center" 
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+            <AppLogo size={72} />
+          </Box>
+
+          <Typography
+            variant="h5"
+            align="center"
             sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
           >
             Registro

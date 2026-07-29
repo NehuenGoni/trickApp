@@ -5,7 +5,8 @@ import {
   Card,
   CardContent,
   Typography,
-  Box
+  Box,
+  Chip
 } from '@mui/material';
 import {
   SportsEsports as GameIcon,
@@ -14,11 +15,18 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import AppLogo from '../../components/AppLogo';
 
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const cards = [
+  const cards: {
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    action?: () => void;
+    comingSoon?: boolean;
+  }[] = [
     {
       title: 'Partido Rápido',
       description: 'Crea un partido rápido de parejas o tríos',
@@ -35,7 +43,7 @@ const Dashboard = () => {
       title: 'Ligas',
       description: 'Compite en ligas a largo plazo',
       icon: <LeagueIcon sx={{ fontSize: 40 }} />,
-      action: () => navigate('/leagues')
+      comingSoon: true
     }
   ];
 
@@ -43,6 +51,10 @@ const Dashboard = () => {
     <Box>
       <NavBar />
       <Container sx={{ mt: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+          <AppLogo size={96} />
+        </Box>
+
         <Typography variant="h4" gutterBottom align="center">
           ¡Bienvenido a TrickApp!
         </Typography>
@@ -50,21 +62,33 @@ const Dashboard = () => {
         <Grid container spacing={3} sx={{ mt: 2 }}>
           {cards.map((card, index) => (
             <Grid item xs={12} md={4} key={index}>
-              <Card 
-                sx={{ 
+              <Card
+                sx={{
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  cursor: 'pointer',
-                  '&:hover': {
-                    boxShadow: 6
-                  }
+                  position: 'relative',
+                  cursor: card.comingSoon ? 'default' : 'pointer',
+                  opacity: card.comingSoon ? 0.6 : 1,
+                  ...(!card.comingSoon && {
+                    '&:hover': {
+                      boxShadow: 6
+                    }
+                  })
                 }}
                 onClick={card.action}
               >
-                <CardContent sx={{ 
-                  flexGrow: 1, 
-                  display: 'flex', 
+                {card.comingSoon && (
+                  <Chip
+                    label="Próximamente"
+                    color="secondary"
+                    size="small"
+                    sx={{ position: 'absolute', top: 12, right: 12 }}
+                  />
+                )}
+                <CardContent sx={{
+                  flexGrow: 1,
+                  display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   textAlign: 'center'

@@ -15,5 +15,6 @@ module.exports = {
   },
   moduleNameMapper: {
     "^react-router-dom$": "<rootDir>/src/__mocks__/react-router-dom.ts",
+    "\\.(png|jpe?g|svg|webp|gif)$": "<rootDir>/src/__mocks__/fileMock.ts",
   },
 };
