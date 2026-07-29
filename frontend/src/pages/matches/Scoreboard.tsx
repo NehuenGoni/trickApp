@@ -206,6 +206,7 @@ const Scoreboard = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?.status, match?.tournament, match?.winner, isRealTournament, userLogged]);
 
   // Cancela el debounce pendiente (si existe) y sincroniza el score actual
