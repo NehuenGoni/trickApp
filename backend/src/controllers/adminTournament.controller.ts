@@ -19,7 +19,8 @@ import {
   computePlayerStats,
   awardTournamentPoints,
   revertTournamentPoints,
-  deleteTournamentCascade
+  deleteTournamentCascade,
+  resolveTournamentLeague
 } from "./tournament.controller";
 import { withTransaction } from "../utils/withTransaction";
 
@@ -44,10 +45,15 @@ export const listTournaments = async (req: Request, res: Response): Promise<void
     if (status && (TOURNAMENT_STATUSES as readonly string[]).includes(status)) {
       filter.status = status;
     }
+    const league = req.query.league as string | undefined;
+    if (league && mongoose.isValidObjectId(league)) {
+      filter.league = league;
+    }
 
     const [tournaments, total] = await Promise.all([
       TournamentModel.find(filter)
         .populate("createdBy", "username email")
+        .populate("league", "name")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
@@ -83,14 +89,23 @@ export const updateTournament = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
 
-    const { name, description, startDate, type, format, teamFormationMode } = req.body as {
+    const { name, description, startDate, type, format, teamFormationMode, league } = req.body as {
       name?: string;
       description?: string;
       startDate?: string;
       type?: string;
       format?: string;
       teamFormationMode?: string;
+      league?: string | null;
     };
+
+    if (league !== undefined) {
+      const resolved = await resolveTournamentLeague(league, req.authUser);
+      if ("error" in resolved) {
+        return void res.status(resolved.status).json({ message: resolved.error });
+      }
+      tournament.league = resolved.league;
+    }
 
     if (name !== undefined) {
       if (!name.trim()) {
@@ -310,16 +325,15 @@ export const deleteTournament = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
 
-    // La cascada descuenta los puntos ya otorgados y saca el torneo de las
-    // ligas, para que ni el ranking global ni las tablas queden inflados.
-    const { deletedMatches, leaguesTouched } = await withTransaction((session) =>
+    // La cascada descuenta los puntos ya otorgados. Si el torneo pertenecía a
+    // una liga, esta se corrige sola: su tabla de posiciones es derivada, no
+    // hace falta ningún paso extra acá (ver deleteTournamentCascade).
+    const { deletedMatches } = await withTransaction((session) =>
       deleteTournamentCascade(tournament, session)
     );
 
     res.status(200).json({
-      message: `Torneo "${tournament.name}" eliminado junto con ${deletedMatches} partido(s)${
-        leaguesTouched ? ` y quitado de ${leaguesTouched} liga(s)` : ""
-      }.`
+      message: `Torneo "${tournament.name}" eliminado junto con ${deletedMatches} partido(s).`
     });
   } catch (error: any) {
     res.status(500).json({ message: "Error al eliminar el torneo", error: error.message });

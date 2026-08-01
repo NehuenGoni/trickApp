@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, CircularProgress, Typography } from '@mui/material';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import DeleteIcon from '@mui/icons-material/Delete';
-import API_ROUTES, { apiRequest } from '../config/api';
+import { apiRequest } from '../config/api';
 import { TournamentLogoMeta } from '../types/tournament';
 import {
   ACCEPTED_IMAGE_TYPES,
@@ -10,15 +10,19 @@ import {
   resizeToSquareWebp
 } from '../utils/imageResize';
 
-interface TournamentLogoUploaderProps {
+interface LogoUploaderProps {
   /**
-   * En edición: el logo se sube apenas se elige el archivo.
-   * En creación el torneo todavía no existe, así que se omite y el Blob queda
-   * en manos del padre hasta que haya un id.
+   * En edición: el logo se sube apenas se elige el archivo, a `uploadUrl`
+   * (PUT) / `deleteUrl` (DELETE).
+   * En creación la entidad todavía no existe, así que se omiten y el Blob
+   * queda en manos del padre hasta que haya un id (vía `onChange`).
    */
-  tournamentId?: string;
+  uploadUrl?: string;
+  deleteUrl?: string;
   /** Logo actual, para el preview inicial. */
   logo?: TournamentLogoMeta | null;
+  /** URL ya armada del logo actual (requiere `logo.version` y el id de la entidad). */
+  currentLogoUrl?: string;
   /** Se llama con el Blob procesado (creación) o con la metadata nueva (edición). */
   onChange?: (blob: Blob | null) => void;
   onUploaded?: (logo: TournamentLogoMeta | null) => void;
@@ -26,23 +30,20 @@ interface TournamentLogoUploaderProps {
   label?: string;
 }
 
-const TournamentLogoUploader: React.FC<TournamentLogoUploaderProps> = ({
-  tournamentId,
-  logo,
+/** Subida de logo genérica: la usan torneos y ligas (mismo esquema de metadata). */
+const LogoUploader: React.FC<LogoUploaderProps> = ({
+  uploadUrl,
+  deleteUrl,
+  currentLogoUrl,
   onChange,
   onUploaded,
   size = 96,
-  label = 'Logo del torneo'
+  label = 'Logo'
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  const currentLogoUrl =
-    tournamentId && logo?.version
-      ? API_ROUTES.TOURNAMENTS.LOGO(tournamentId, logo.version)
-      : undefined;
 
   // El object URL del preview local se revoca al reemplazarlo o al desmontar,
   // si no queda el Blob retenido en memoria.
@@ -69,10 +70,10 @@ const TournamentLogoUploader: React.FC<TournamentLogoUploaderProps> = ({
         return URL.createObjectURL(blob);
       });
 
-      if (tournamentId) {
+      if (uploadUrl) {
         const formData = new FormData();
         formData.append('logo', blob, 'logo.webp');
-        const result = await apiRequest(API_ROUTES.TOURNAMENTS.LOGO_UPLOAD(tournamentId), {
+        const result = await apiRequest(uploadUrl, {
           method: 'PUT',
           body: formData
         });
@@ -102,14 +103,14 @@ const TournamentLogoUploader: React.FC<TournamentLogoUploaderProps> = ({
       return null;
     });
 
-    if (!tournamentId) {
+    if (!deleteUrl) {
       onChange?.(null);
       return;
     }
 
     setBusy(true);
     try {
-      await apiRequest(API_ROUTES.TOURNAMENTS.LOGO_DELETE(tournamentId), { method: 'DELETE' });
+      await apiRequest(deleteUrl, { method: 'DELETE' });
       onUploaded?.(null);
     } catch (err) {
       setError((err as Error)?.message || 'No se pudo quitar el logo');
@@ -203,4 +204,4 @@ const TournamentLogoUploader: React.FC<TournamentLogoUploaderProps> = ({
   );
 };
 
-export default TournamentLogoUploader;
+export default LogoUploader;

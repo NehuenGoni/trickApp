@@ -239,6 +239,17 @@ async function migrateTournaments(db: Db, apply: boolean) {
     apply
   );
   await backfillTournamentSubdocs(db, apply);
+
+  // No hay backfill de datos para `league`: la colección `leagues` está vacía
+  // en producción al momento de esta migración (la feature nunca tuvo UI), así
+  // que ningún torneo puede referenciar una liga todavía. Solo hace falta el
+  // índice nuevo, que usa `computeLeagueStandings` (ver utils/leagueStandings.ts).
+  if (!apply) {
+    console.log("  [dry-run] índice league_1_status_1 → se crearía con --apply");
+  } else {
+    await db.collection("tournaments").createIndex({ league: 1, status: 1 });
+    console.log("  índice league_1_status_1 → asegurado (createIndex es idempotente)");
+  }
 }
 
 async function migrateMatches(db: Db, apply: boolean) {

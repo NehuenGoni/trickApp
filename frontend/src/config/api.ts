@@ -75,13 +75,20 @@ const API_ROUTES = {
   },
   LEAGUES: {
     CREATE: `${API_BASE_URL}/leagues`,
+    // Filtro de inactivas vía `apiRequest(LIST, { params: { includeInactive: 1 } })`.
     LIST: `${API_BASE_URL}/leagues`,
     DETAIL: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
-    ADD_TOURNAMENT: `${API_BASE_URL}/leagues/add-tournament`,
-    UPDATE_POINTS: `${API_BASE_URL}/leagues/update-points`,
     STANDINGS: (id: string) => `${API_BASE_URL}/leagues/${id}/standings`,
+    // Sirve tanto para agregar (PUT) como para quitar (DELETE) un torneo de la liga.
+    LEAGUE_TOURNAMENT: (id: string, tournamentId: string) =>
+      `${API_BASE_URL}/leagues/${id}/tournaments/${tournamentId}`,
+    // El `version` va como query param para invalidar el cache del browser, igual que en torneos.
+    LOGO: (id: string, version?: string) =>
+      `${API_BASE_URL}/leagues/${id}/logo${version ? `?v=${encodeURIComponent(version)}` : ''}`,
+    LOGO_UPLOAD: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
+    LOGO_DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
   },
 };
 

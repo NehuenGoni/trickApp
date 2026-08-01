@@ -35,8 +35,9 @@ import {
 import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import TournamentLogo from '../../components/TournamentLogo';
-import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import LogoUploader from '../../components/LogoUploader';
 import { TournamentLogoMeta } from '../../types/tournament';
+import { LeagueListItem, LeagueRef } from '../../types/league';
 
 type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';
 
@@ -55,6 +56,7 @@ interface AdminTournament {
   individualSignups?: Array<{ name: string }>;
   matches?: string[];
   createdBy?: { _id: string; username: string } | string;
+  league?: LeagueRef | null;
 }
 
 interface AdminMatch {
@@ -94,7 +96,9 @@ const emptyEditForm = {
   startDate: '',
   type: 'master-1000' as AdminTournament['type'],
   format: 'duos' as AdminTournament['format'],
-  teamFormationMode: 'user-formed' as AdminTournament['teamFormationMode']
+  teamFormationMode: 'user-formed' as AdminTournament['teamFormationMode'],
+  /** '' = sin liga. */
+  league: ''
 };
 
 const teamLabel = (team: AdminMatch['teams'][number]) =>
@@ -115,6 +119,7 @@ const AdminTournaments = () => {
 
   const [editTarget, setEditTarget] = useState<AdminTournament | null>(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
+  const [leagues, setLeagues] = useState<LeagueListItem[]>([]);
   const [resetTarget, setResetTarget] = useState<AdminTournament | null>(null);
   const [unmakeTeams, setUnmakeTeams] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminTournament | null>(null);
@@ -163,6 +168,16 @@ const AdminTournaments = () => {
     fetchTournaments();
   }, [fetchTournaments]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        setLeagues(await apiRequest(API_ROUTES.LEAGUES.LIST, { params: { includeInactive: 1 } }));
+      } catch {
+        // El selector de liga del diálogo de edición simplemente queda vacío.
+      }
+    })();
+  }, []);
+
   const runAction = async (
     url: string,
     options: RequestInit,
@@ -191,7 +206,8 @@ const AdminTournaments = () => {
       startDate: new Date(tournament.startDate).toISOString().slice(0, 16),
       type: tournament.type,
       format: tournament.format,
-      teamFormationMode: tournament.teamFormationMode
+      teamFormationMode: tournament.teamFormationMode,
+      league: tournament.league?._id || ''
     });
   };
 
@@ -203,7 +219,8 @@ const AdminTournaments = () => {
         method: 'PUT',
         body: JSON.stringify({
           ...editForm,
-          startDate: new Date(editForm.startDate).toISOString()
+          startDate: new Date(editForm.startDate).toISOString(),
+          league: editForm.league || null
         })
       },
       'Torneo actualizado'
@@ -407,6 +424,9 @@ const AdminTournaments = () => {
                 />
                 <Chip size="small" label={`${tournament.teams?.length || 0} equipos`} />
                 <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
+                {tournament.league && (
+                  <Chip size="small" label={`Liga: ${tournament.league.name}`} color="secondary" />
+                )}
                 {tournament.pointsAwarded && (
                   <Chip size="small" color="success" label="Puntos otorgados" />
                 )}
@@ -503,9 +523,14 @@ const AdminTournaments = () => {
             {/* El logo se guarda al instante por su propio endpoint, sin pasar
                 por "Guardar" ni por las restricciones del resto del formulario. */}
             {editTarget && (
-              <TournamentLogoUploader
-                tournamentId={editTarget._id}
-                logo={editTarget.logo}
+              <LogoUploader
+                uploadUrl={API_ROUTES.TOURNAMENTS.LOGO_UPLOAD(editTarget._id)}
+                deleteUrl={API_ROUTES.TOURNAMENTS.LOGO_DELETE(editTarget._id)}
+                currentLogoUrl={
+                  editTarget.logo?.version
+                    ? API_ROUTES.TOURNAMENTS.LOGO(editTarget._id, editTarget.logo.version)
+                    : undefined
+                }
                 size={72}
                 onUploaded={(logo) => {
                   setEditTarget((prev) => (prev ? { ...prev, logo } : prev));
@@ -584,6 +609,20 @@ const AdminTournaments = () => {
             >
               <MenuItem value="user-formed">Los jugadores arman su equipo</MenuItem>
               <MenuItem value="random">Sorteo de equipos</MenuItem>
+            </TextField>
+            <TextField
+              select
+              label="Liga"
+              value={editForm.league}
+              onChange={(e) => setEditForm({ ...editForm, league: e.target.value })}
+              fullWidth
+            >
+              <MenuItem value="">Sin liga</MenuItem>
+              {leagues.map((league) => (
+                <MenuItem key={league._id} value={league._id}>
+                  {league.name}
+                </MenuItem>
+              ))}
             </TextField>
           </Stack>
         </DialogContent>

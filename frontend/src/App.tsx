@@ -14,6 +14,9 @@ import Scoreboard from './pages/matches/Scoreboard';
 import TournamentList from './pages/tournaments/TournamentList';
 import CreateTournament from './pages/tournaments/CreateTournament';
 import TournamentDetails from './pages/tournaments/TournamentDetails';
+import LeagueList from './pages/leagues/LeagueList';
+import LeagueForm from './pages/leagues/LeagueForm';
+import LeagueDetails from './pages/leagues/LeagueDetails';
 import PrivateRoute from './components/PrivateRoute';
 import AdminRoute from './components/AdminRoute';
 import Stats from './pages/stats/Stats';
@@ -78,6 +81,27 @@ function App(): JSX.Element {
           } />
 
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
+
+          <Route path="/leagues" element={
+            <PrivateRoute>
+              <LeagueList />
+            </PrivateRoute>
+          } />
+
+          <Route path="/leagues/create" element={
+            <PrivateRoute>
+              <LeagueForm />
+            </PrivateRoute>
+          } />
+
+          <Route path="/leagues/:id/edit" element={
+            <PrivateRoute>
+              <LeagueForm />
+            </PrivateRoute>
+          } />
+
+          {/* Sin guard, igual que /tournaments/:id: el GET es público y sirve para compartir la tabla. */}
+          <Route path="/leagues/:id" element={<LeagueDetails />} />
 
           <Route path="/live/:tournamentId" element={<LiveTournament />} />
 

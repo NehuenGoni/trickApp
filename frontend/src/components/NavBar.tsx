@@ -18,6 +18,7 @@ import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
   Timeline as StatsIcon,
+  Leaderboard as LeagueIcon,
   Dashboard as DashboardIcon,
   AdminPanelSettings as AdminIcon,
   Logout as LogoutIcon
@@ -81,6 +82,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     { icon: <PersonIcon fontSize="small" />, label: 'Mi Perfil', path: '/profile' },
     { icon: <StatsIcon fontSize="small" />, label: 'Mis Estadísticas', path: '/stats' },
     { icon: <TrophyIcon fontSize="small" />, label: 'Mis Logros', path: '/achievements' },
+    { icon: <LeagueIcon fontSize="small" />, label: 'Ligas', path: '/leagues' },
     ...(isAdmin
       ? ([
           { divider: true },

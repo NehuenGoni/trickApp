@@ -11,7 +11,7 @@ import {
 import {
   SportsEsports as GameIcon,
   EmojiEvents as TournamentIcon,
-  Timeline as LeagueIcon
+  Leaderboard as LeagueIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
@@ -43,7 +43,7 @@ const Dashboard = () => {
       title: 'Ligas',
       description: 'Compite en ligas a largo plazo',
       icon: <LeagueIcon sx={{ fontSize: 40 }} />,
-      comingSoon: true
+      action: () => navigate('/leagues')
     }
   ];
 

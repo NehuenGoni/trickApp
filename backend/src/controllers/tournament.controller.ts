@@ -1,8 +1,9 @@
 import { Request, Response } from "express";
 import mongoose, { ClientSession } from "mongoose";
-import User from "../models/User";
+import User, { UserRole } from "../models/User";
 import Match from "../models/Match";
 import League from "../models/League";
+import { canManageLeague } from "../utils/leaguePermissions";
 import TournamentModel, {
   ITournament,
   ITeam,
@@ -43,6 +44,36 @@ const isValidFormationMode = (value: unknown) =>
 
 const isValidGuestDrawMode = (value: unknown): value is GuestDrawMode =>
   value === GUEST_DRAW_MODES.GROUPED || value === GUEST_DRAW_MODES.MIXED;
+
+/**
+ * Resuelve y valida el `league` opcional que puede venir en el body al crear
+ * o editar un torneo. `null`/`""` desvincula. Devuelve `undefined` si el
+ * campo no vino (no tocar), o `{ error }` si algo no es válido.
+ *
+ * Asignar un torneo a una liga es una mutación de LIGA, así que pasa por el
+ * mismo gate que el resto de la administración de ligas (`canManageLeague`)
+ * — si no, el chequeo de permisos que vive en league.controller.ts se podría
+ * esquivar creando o editando el torneo directamente.
+ */
+export const resolveTournamentLeague = async (
+  rawLeague: unknown,
+  authUser?: { id: string; role: UserRole }
+): Promise<{ league: mongoose.Types.ObjectId | null } | { error: string; status: number }> => {
+  if (rawLeague === null || rawLeague === "") {
+    return { league: null };
+  }
+  if (typeof rawLeague !== "string" || !mongoose.isValidObjectId(rawLeague)) {
+    return { error: "ID de liga inválido", status: 400 };
+  }
+  const league = await League.findById(rawLeague).select("createdBy");
+  if (!league) {
+    return { error: "Liga no encontrada", status: 404 };
+  }
+  if (!canManageLeague(authUser, league)) {
+    return { error: "No tenés permisos para asignar torneos a esta liga", status: 403 };
+  }
+  return { league: league._id as mongoose.Types.ObjectId };
+};
 
 const shuffle = <T,>(arr: T[]): T[] => {
   const out = [...arr];
@@ -119,7 +150,8 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
     type,
     format,
     teamFormationMode,
-    guestDrawMode
+    guestDrawMode,
+    league: rawLeague
   } = req.body;
   const createdBy = req.user;
 
@@ -134,6 +166,15 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
   }
   if (guestDrawMode !== undefined && !isValidGuestDrawMode(guestDrawMode)) {
     return void res.status(400).json({ message: "Modo de agrupación de invitados inválido (grouped | mixed)" });
+  }
+
+  let league: mongoose.Types.ObjectId | null = null;
+  if (rawLeague !== undefined) {
+    const resolved = await resolveTournamentLeague(rawLeague, req.authUser);
+    if ("error" in resolved) {
+      return void res.status(resolved.status).json({ message: resolved.error });
+    }
+    league = resolved.league;
   }
 
   try {
@@ -151,7 +192,8 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
       individualSignups: [],
       matches: [],
       playerStats: [],
-      pointsAwarded: false
+      pointsAwarded: false,
+      league
     });
     await tournament.save();
     res.status(201).json(tournament);
@@ -162,7 +204,7 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
 
 export const getTournaments = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const tournaments = await TournamentModel.find().sort({ createdAt: -1 });
+    const tournaments = await TournamentModel.find().sort({ createdAt: -1 }).populate("league", "name");
     res.status(200).json(tournaments);
   } catch (error) {
     res.status(400).json({ message: "Error al obtener los torneos", error });
@@ -171,9 +213,9 @@ export const getTournaments = async (_req: Request, res: Response): Promise<void
 
 export const getOpenTournaments = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const tournaments = await TournamentModel.find({ status: "upcoming" }).sort({
-      createdAt: -1
-    });
+    const tournaments = await TournamentModel.find({ status: "upcoming" })
+      .sort({ createdAt: -1 })
+      .populate("league", "name");
     res.status(200).json(tournaments);
   } catch (error) {
     res.status(400).json({ message: "Error al obtener los torneos abiertos", error });
@@ -182,7 +224,7 @@ export const getOpenTournaments = async (_req: Request, res: Response): Promise<
 
 export const getTournamentById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const tournament = await TournamentModel.findById(req.params.id);
+    const tournament = await TournamentModel.findById(req.params.id).populate("league", "name");
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
@@ -205,6 +247,14 @@ export const updateTournament = async (req: AuthRequest, res: Response): Promise
       return void res.status(400).json({
         message: "Solo se puede modificar un torneo que aún no comenzó"
       });
+    }
+
+    if (req.body.league !== undefined) {
+      const resolved = await resolveTournamentLeague(req.body.league, req.authUser);
+      if ("error" in resolved) {
+        return void res.status(resolved.status).json({ message: resolved.error });
+      }
+      tournament.league = resolved.league;
     }
 
     const allowed: Array<keyof ITournament> = ["name", "description", "startDate"];
@@ -1145,8 +1195,14 @@ export const revertTournamentPoints = async (
 
 /**
  * Borra el torneo y todo lo que lo referencia: los puntos que repartió al
- * ranking global, sus partidos y su presencia en las ligas. Lo embebido en el
- * documento (equipos, inscriptos, `playerStats`) se va con él.
+ * ranking global y sus partidos. Lo embebido en el documento (equipos,
+ * inscriptos, `playerStats`) se va con él.
+ *
+ * No hace falta tocar ninguna liga: el vínculo torneo↔liga vive en
+ * `Tournament.league` (no en un array del lado de la liga), así que muere
+ * junto con el documento sin ningún paso extra. La tabla de posiciones de la
+ * liga es derivada (`computeLeagueStandings`), así que se corrige sola en la
+ * próxima lectura.
  *
  * No abre transacción por su cuenta: quien la llame debería envolverla en
  * `withTransaction` y pasarle la sesión.
@@ -1154,7 +1210,7 @@ export const revertTournamentPoints = async (
 export const deleteTournamentCascade = async (
   tournament: ITournament,
   session?: ClientSession
-): Promise<{ deletedMatches: number; leaguesTouched: number }> => {
+): Promise<{ deletedMatches: number }> => {
   await revertTournamentPoints(tournament, session);
 
   const deleted = await Match.deleteMany({ tournament: tournament._id }, { session });
@@ -1163,50 +1219,10 @@ export const deleteTournamentCascade = async (
   // torneo: sin este borrado quedan binarios huérfanos en Mongo para siempre.
   await TournamentLogoModel.deleteOne({ tournamentId: tournament._id }, { session });
 
-  // `$pull` de las ligas y, en el mismo update, se corrige `tournamentsPlayed`:
-  // `updateUserLeaguePoints` lo sube con `Math.max` y nunca lo baja, así que sin
-  // este clamp quedaría contando un torneo que ya no existe.
-  const leagues = await League.updateMany(
-    { tournaments: tournament._id },
-    [
-      {
-        $set: {
-          tournaments: {
-            $filter: {
-              input: "$tournaments",
-              cond: { $ne: ["$$this", tournament._id] }
-            }
-          }
-        }
-      },
-      {
-        $set: {
-          userStats: {
-            $map: {
-              input: "$userStats",
-              in: {
-                $mergeObjects: [
-                  "$$this",
-                  {
-                    tournamentsPlayed: {
-                      $min: ["$$this.tournamentsPlayed", { $size: "$tournaments" }]
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    ],
-    { session }
-  );
-
   await tournament.deleteOne({ session });
 
   return {
-    deletedMatches: deleted.deletedCount ?? 0,
-    leaguesTouched: leagues.modifiedCount ?? 0
+    deletedMatches: deleted.deletedCount ?? 0
   };
 };
 

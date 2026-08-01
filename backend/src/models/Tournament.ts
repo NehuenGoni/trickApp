@@ -70,6 +70,8 @@ export interface ITournament extends Document {
   description?: string;
   status: 'upcoming' | 'in_progress' | 'completed';
   logo?: ITournamentLogoMeta | null;
+  /** Liga a la que pertenece, si la tiene. Un torneo pertenece a una sola liga. */
+  league?: mongoose.Types.ObjectId | null;
 }
 
 const PlayerSchema = new Schema<IPlayer>({
@@ -161,10 +163,17 @@ const tournamentSchema = new Schema<ITournament>(
     // Los torneos creados antes de esta feature simplemente no tienen el campo:
     // se leen como `null` y el frontend cae al fallback de iniciales.
     logo: { type: LogoMetaSchema, default: null },
+    // Opcional: la gran mayoría de los torneos no pertenece a ninguna liga.
+    // Es la única fuente de verdad del vínculo torneo↔liga (ver models/League.ts).
+    league: { type: Schema.Types.ObjectId, ref: "League", default: null },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "tournaments", timestamps: true }
 );
+
+// Es exactamente la query que arma la tabla de posiciones de una liga
+// (computeLeagueStandings): todos los torneos completados de una liga.
+tournamentSchema.index({ league: 1, status: 1 });
 
 const TournamentModel = model<ITournament>("Tournament", tournamentSchema);
 

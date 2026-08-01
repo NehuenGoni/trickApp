@@ -41,9 +41,11 @@ const API_ROUTES= {
     DETAIL: (id: string) => `/leagues/${id}`,
     UPDATE: (id: string) => `/leagues/${id}`,
     DELETE: (id: string) => `/leagues/${id}`,
-    ADD_TOURNAMENT: '/leagues/add-tournament',
-    UPDATE_POINTS: '/leagues/update-points',
     STANDINGS: (id: string) => `/leagues/${id}/standings`,
+    LEAGUE_TOURNAMENT: (id: string, tournamentId: string) => `/leagues/${id}/tournaments/${tournamentId}`,
+    LOGO: (id: string, version?: string) => `/leagues/${id}/logo${version ? `?v=${version}` : ''}`,
+    LOGO_UPLOAD: (id: string) => `/leagues/${id}/logo`,
+    LOGO_DELETE: (id: string) => `/leagues/${id}/logo`,
     },
 }
 

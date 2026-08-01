@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Avatar,
   Container,
@@ -13,12 +13,16 @@ import {
   Step,
   StepLabel,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  MenuItem
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
-import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import LogoUploader from '../../components/LogoUploader';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import useCurrentUser from '../../hooks/useCurrentUser';
+import { canManageLeague } from '../../utils/leaguePermissions';
+import { LeagueListItem } from '../../types/league';
 
 type TournamentType = 'grand-slam' | 'master-1000';
 type TournamentFormat = 'duos' | 'trios';
@@ -33,6 +37,8 @@ interface TournamentForm {
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
   guestDrawMode: GuestDrawMode;
+  /** '' = sin liga. Solo lo puede setear un admin (ver `canManageLeague` en el backend). */
+  league: string;
 }
 
 const isAuthError = (error: { response?: { status?: number }; message?: string }) =>
@@ -43,6 +49,9 @@ const isAuthError = (error: { response?: { status?: number }; message?: string }
 
 const CreateTournament = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const leagueParam = searchParams.get('league');
+  const { user } = useCurrentUser();
   const [activeStep, setActiveStep] = useState(0);
   const [formData, setFormData] = useState<TournamentForm>({
     name: '',
@@ -51,7 +60,8 @@ const CreateTournament = () => {
     type: 'grand-slam',
     format: 'duos',
     teamFormationMode: 'user-formed',
-    guestDrawMode: 'grouped'
+    guestDrawMode: 'grouped',
+    league: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,6 +69,41 @@ const CreateTournament = () => {
   // que recién existe después del POST. Queda acá hasta entonces.
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [leagues, setLeagues] = useState<LeagueListItem[]>([]);
+  // true cuando la liga vino fija por `?league=` y ya se validó: el campo
+  // queda bloqueado para que no se pueda "destrabar" a otra liga.
+  const [leagueLocked, setLeagueLocked] = useState(false);
+  // El `?league=` apuntaba a una liga que no existe o que el usuario no
+  // administra: se ignora la preselección y se avisa, en vez de mandar al
+  // backend un valor que va a rechazar con 403.
+  const [leagueParamWarning, setLeagueParamWarning] = useState(false);
+
+  // Solo quien administra al menos una liga (admin, o creador de esa liga)
+  // puede asignarla; para el resto el selector ni se pide. `LEAGUES.LIST` es
+  // público, así que el fetch se hace igual y se filtra en cliente.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const allLeagues: LeagueListItem[] = await apiRequest(API_ROUTES.LEAGUES.LIST);
+        const manageable = allLeagues.filter((l) => canManageLeague(user, l));
+        setLeagues(manageable);
+
+        if (leagueParam) {
+          const match = manageable.find((l) => l._id === leagueParam);
+          if (match) {
+            setFormData((prev) => ({ ...prev, league: match._id }));
+            setLeagueLocked(true);
+          } else {
+            setLeagueParamWarning(true);
+          }
+        }
+      } catch {
+        // Si falla, el selector de liga simplemente no aparece; no es un
+        // paso bloqueante para crear el torneo.
+      }
+    })();
+  }, [user, leagueParam]);
 
   const steps = ['Información del torneo', 'Vista previa'];
 
@@ -101,7 +146,8 @@ const CreateTournament = () => {
           type: formData.type,
           format: formData.format,
           teamFormationMode: formData.teamFormationMode,
-          guestDrawMode: formData.guestDrawMode
+          guestDrawMode: formData.guestDrawMode,
+          ...(formData.league ? { league: formData.league } : {})
         })
       });
 
@@ -168,6 +214,12 @@ const CreateTournament = () => {
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {leagueParamWarning && (
+            <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setLeagueParamWarning(false)}>
+              No se pudo preseleccionar la liga indicada: no existe o no tenés permisos para
+              administrarla. Podés elegir otra desde el selector, o dejar el torneo sin liga.
+            </Alert>
+          )}
 
           <Stepper activeStep={activeStep} sx={{ mb: 3, mt: 2 }}>
             {steps.map((label) => (
@@ -212,8 +264,28 @@ const CreateTournament = () => {
                   margin="normal"
                 />
 
+                {leagues.length > 0 && (
+                  <TextField
+                    fullWidth
+                    select
+                    label="Liga (opcional)"
+                    value={formData.league}
+                    onChange={(e) => setFormData({ ...formData, league: e.target.value })}
+                    margin="normal"
+                    disabled={leagueLocked}
+                    helperText={leagueLocked ? 'El torneo se va a crear dentro de esta liga' : undefined}
+                  >
+                    <MenuItem value="">Sin liga</MenuItem>
+                    {leagues.map((league) => (
+                      <MenuItem key={league._id} value={league._id}>
+                        {league.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+
                 <Box sx={{ my: 3 }}>
-                  <TournamentLogoUploader
+                  <LogoUploader
                     onChange={handleLogoChange}
                     label="Logo del torneo (opcional)"
                   />
@@ -344,6 +416,12 @@ const CreateTournament = () => {
                       ? 'Armados por jugadores'
                       : 'Aleatorios'}
                   </Typography>
+                  {formData.league && (
+                    <Typography>
+                      <b>Liga:</b>{' '}
+                      {leagues.find((l) => l._id === formData.league)?.name || formData.league}
+                    </Typography>
+                  )}
                   {formData.teamFormationMode === 'random' && (
                     <Typography>
                       <b>Invitados en el sorteo:</b>{' '}

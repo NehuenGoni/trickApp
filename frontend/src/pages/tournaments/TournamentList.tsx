@@ -29,6 +29,7 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import TournamentLogo from '../../components/TournamentLogo';
 import { TournamentLogoMeta } from '../../types/tournament';
+import { LeagueRef } from '../../types/league';
 
 interface Tournament {
   _id: string;
@@ -40,6 +41,7 @@ interface Tournament {
   type?: 'grand-slam' | 'master-1000';
   format?: 'duos' | 'trios';
   teamFormationMode?: 'user-formed' | 'random';
+  league?: LeagueRef | null;
   teams: Array<{
     teamId: string;
     name: string;
@@ -90,7 +92,8 @@ const TournamentList = () => {
       const url = isAdmin
         ? API_ROUTES.ADMIN.TOURNAMENT(selectedTournament)
         : API_ROUTES.TOURNAMENTS.DELETE(selectedTournament);
-      // El backend detalla en `message` cuántos partidos y ligas tocó la cascada.
+      // El backend detalla en `message` cuántos partidos tocó la cascada. Si el
+      // torneo pertenecía a una liga, esta se corrige sola (standings derivados).
       const data = await apiRequest(url, { method: 'DELETE' });
       setTournaments(tournaments.filter(t => t._id !== selectedTournament));
       setSuccess(data?.message || 'Torneo eliminado con éxito');
@@ -261,6 +264,9 @@ const TournamentList = () => {
                       )}
                       <Chip size="small" label={getCapacityLabel(tournament)} />
                       <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
+                      {tournament.league && (
+                        <Chip size="small" label={`Liga: ${tournament.league.name}`} color="secondary" />
+                      )}
                     </Box>
                   </Box>
                 </CardActionArea>

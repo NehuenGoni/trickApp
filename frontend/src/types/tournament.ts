@@ -19,3 +19,10 @@ export interface TournamentLogoSource {
   name: string;
   logo?: TournamentLogoMeta | null;
 }
+
+/**
+ * Reescrito como literal en varias vistas (TournamentList, TournamentDetails,
+ * AdminTournaments, useLiveTournament); se centraliza acá para nuevo código.
+ * Debe reflejar el enum de `backend/src/models/Tournament.ts`.
+ */
+export type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';

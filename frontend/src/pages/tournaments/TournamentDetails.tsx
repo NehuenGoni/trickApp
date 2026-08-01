@@ -32,9 +32,10 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
 import TournamentLogo from '../../components/TournamentLogo';
-import TournamentLogoUploader from '../../components/TournamentLogoUploader';
+import LogoUploader from '../../components/LogoUploader';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import { TournamentLogoMeta } from '../../types/tournament';
+import { LeagueRef } from '../../types/league';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch } from '../../utils/tournament';
 
@@ -107,6 +108,7 @@ interface Tournament {
   playerStats: PlayerStat[];
   pointsAwarded: boolean;
   logo?: TournamentLogoMeta | null;
+  league?: LeagueRef | null;
 }
 
 interface UserOption {
@@ -806,6 +808,14 @@ const TournamentDetails = () => {
                 }
               />
               <Chip size="small" label={`${slotsFilled}/${totalSlots}`} />
+              {tournament.league && (
+                <Chip
+                  size="small"
+                  label={`Liga: ${tournament.league.name}`}
+                  color="secondary"
+                  onClick={() => navigate(`/leagues/${tournament.league!._id}`)}
+                />
+              )}
             </Box>
 
             {/* El logo es cosmético, así que se puede cambiar en cualquier
@@ -1464,9 +1474,14 @@ const TournamentDetails = () => {
           <DialogTitle>Logo del torneo</DialogTitle>
           <DialogContent>
             <Box sx={{ pt: 1 }}>
-              <TournamentLogoUploader
-                tournamentId={tournament._id}
-                logo={tournament.logo}
+              <LogoUploader
+                uploadUrl={API_ROUTES.TOURNAMENTS.LOGO_UPLOAD(tournament._id)}
+                deleteUrl={API_ROUTES.TOURNAMENTS.LOGO_DELETE(tournament._id)}
+                currentLogoUrl={
+                  tournament.logo?.version
+                    ? API_ROUTES.TOURNAMENTS.LOGO(tournament._id, tournament.logo.version)
+                    : undefined
+                }
                 label=""
                 onUploaded={(logo) =>
                   setTournament((prev) => (prev ? { ...prev, logo } : prev))
