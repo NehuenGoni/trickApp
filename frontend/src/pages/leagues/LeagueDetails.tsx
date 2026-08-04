@@ -15,13 +15,17 @@ import {
   DialogTitle,
   DialogContent,
   DialogContentText,
-  DialogActions
+  DialogActions,
+  Autocomplete,
+  TextField,
+  Avatar
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Add as AddIcon,
   Close as RemoveIcon,
-  EmojiEvents as TrophyIcon
+  EmojiEvents as TrophyIcon,
+  Person as PersonIcon
 } from '@mui/icons-material';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
@@ -31,7 +35,12 @@ import LeagueTournamentPicker from '../../components/LeagueTournamentPicker';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import { canManageLeague } from '../../utils/leaguePermissions';
-import { LeagueDetail, LeagueTournamentSummary } from '../../types/league';
+import { LeagueDetail, LeagueOrganizer, LeagueTournamentSummary } from '../../types/league';
+
+interface UserOption {
+  _id: string;
+  username: string;
+}
 
 const STATUS_LABEL: Record<LeagueTournamentSummary['status'], string> = {
   upcoming: 'Inscripciones abiertas',
@@ -60,6 +69,12 @@ const LeagueDetails = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<LeagueTournamentSummary | null>(null);
   const [removing, setRemoving] = useState(false);
+
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [selectedOrganizer, setSelectedOrganizer] = useState<UserOption | null>(null);
+  const [addingOrganizer, setAddingOrganizer] = useState(false);
+  const [removingOrganizerId, setRemovingOrganizerId] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async () => {
     if (!id) return;
@@ -92,6 +107,53 @@ const LeagueDetails = () => {
     } finally {
       setRemoving(false);
       setRemoveTarget(null);
+    }
+  };
+
+  const searchUsers = async (q: string) => {
+    if (!q.trim()) {
+      setUserOptions([]);
+      return;
+    }
+    setSearchingUsers(true);
+    try {
+      const result = await apiRequest(API_ROUTES.USERS.SEARCH(q));
+      setUserOptions(result || []);
+    } catch {
+      setUserOptions([]);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  const handleAddOrganizer = async () => {
+    if (!selectedOrganizer || !id) return;
+    setAddingOrganizer(true);
+    try {
+      await apiRequest(API_ROUTES.LEAGUES.ORGANIZERS(id), {
+        method: 'POST',
+        body: JSON.stringify({ userId: selectedOrganizer._id })
+      });
+      setSelectedOrganizer(null);
+      setUserOptions([]);
+      await fetchDetail();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al agregar el organizador');
+    } finally {
+      setAddingOrganizer(false);
+    }
+  };
+
+  const handleRemoveOrganizer = async (organizer: LeagueOrganizer) => {
+    if (!id) return;
+    setRemovingOrganizerId(organizer._id);
+    try {
+      await apiRequest(API_ROUTES.LEAGUES.ORGANIZER(id, organizer._id), { method: 'DELETE' });
+      await fetchDetail();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al quitar el organizador');
+    } finally {
+      setRemovingOrganizerId(null);
     }
   };
 
@@ -174,6 +236,79 @@ const LeagueDetails = () => {
               ' Los jugadores invitados (sin cuenta) se agrupan por nombre; si dos invitados figuran por separado, probablemente se anotaron con variantes del nombre.'}
           </Typography>
         </Paper>
+
+        {canManage && (
+          <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Organizadores
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Pueden sortear, iniciar y cargar resultados de los torneos de esta liga con los
+              mismos permisos que vos, aunque no las hayan creado ellos.
+            </Typography>
+
+            {league.organizers.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Todavía no designaste ningún organizador.
+              </Typography>
+            ) : (
+              <List sx={{ mb: 2 }}>
+                {league.organizers.map((organizer) => (
+                  <Box
+                    key={organizer._id}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      py: 1,
+                      borderBottom: 1,
+                      borderColor: 'divider'
+                    }}
+                  >
+                    <Avatar sx={{ width: 32, height: 32 }}>
+                      <PersonIcon fontSize="small" />
+                    </Avatar>
+                    <Typography sx={{ flexGrow: 1 }}>{organizer.username}</Typography>
+                    <IconButton
+                      title="Quitar organizador"
+                      size="small"
+                      onClick={() => handleRemoveOrganizer(organizer)}
+                      disabled={removingOrganizerId === organizer._id}
+                      sx={{ color: 'error.main' }}
+                    >
+                      <RemoveIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                ))}
+              </List>
+            )}
+
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Autocomplete
+                sx={{ flexGrow: 1 }}
+                size="small"
+                options={userOptions}
+                loading={searchingUsers}
+                getOptionLabel={(o) => o.username}
+                value={selectedOrganizer}
+                onChange={(_, v) => setSelectedOrganizer(v)}
+                onInputChange={(_, v) => searchUsers(v)}
+                isOptionEqualToValue={(o, v) => o._id === v._id}
+                renderInput={(params) => (
+                  <TextField {...params} label="Buscar usuario para agregar" />
+                )}
+              />
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                disabled={!selectedOrganizer || addingOrganizer}
+                onClick={handleAddOrganizer}
+              >
+                Agregar
+              </Button>
+            </Box>
+          </Paper>
+        )}
 
         <Paper elevation={3} sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

@@ -28,6 +28,7 @@ import {
 } from "../config/constants";
 import { withTransaction } from "../utils/withTransaction";
 import { playerKey, validateRosterPayload } from "../utils/roster";
+import { canManageTournament } from "../utils/tournamentAccess";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -303,8 +304,8 @@ export const updateTournament = async (req: AuthRequest, res: Response): Promise
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede modificar el torneo" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({
@@ -339,8 +340,8 @@ export const deleteTournament = async (req: AuthRequest, res: Response): Promise
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede borrar el torneo" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     // Mismo criterio que `deleteMatch`: si no se puede borrar un partido de un
     // torneo en curso, tampoco el torneo entero. El admin sí puede.
@@ -445,11 +446,11 @@ export const removeTeam = async (req: AuthRequest, res: Response): Promise<void>
       return void res.status(404).json({ message: "Equipo no encontrado." });
     }
 
-    const isCreator = tournament.createdBy.toString() === req.user;
+    const canManage = await canManageTournament(tournament, req.authUser);
     const isCaptain = team.registeredBy?.toString() === req.user;
-    if (!isCreator && !isCaptain) {
+    if (!canManage && !isCaptain) {
       return void res.status(403).json({
-        message: "Solo el creador del torneo o quien inscribió el equipo puede eliminarlo"
+        message: "Solo un organizador del torneo o quien inscribió el equipo puede eliminarlo"
       });
     }
 
@@ -661,10 +662,10 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
+    if (!(await canManageTournament(tournament, req.authUser))) {
       res
         .status(403)
-        .json({ message: "Solo el creador puede agregar equipos de invitados" });
+        .json({ message: "No tenés permisos para gestionar este torneo" });
       return;
     }
     if (tournament.status !== "upcoming") {
@@ -729,8 +730,8 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
 
     const tournament = await TournamentModel.findById(id);
     if (!tournament) return void res.status(404).json({ message: "Torneo no encontrado" });
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede inscribir jugadores" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "Las inscripciones están cerradas" });
@@ -807,8 +808,8 @@ export const creatorRemoveSignup = async (req: AuthRequest, res: Response): Prom
 
     const tournament = await TournamentModel.findById(id);
     if (!tournament) return void res.status(404).json({ message: "Torneo no encontrado" });
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede quitar jugadores" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "El torneo ya inició" });
@@ -855,8 +856,8 @@ export const replaceTournamentRoster = async (req: AuthRequest, res: Response): 
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede reorganizar los equipos" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({
@@ -949,8 +950,8 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede sortear el torneo" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "El torneo ya inició o finalizó" });
@@ -1037,8 +1038,8 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (tournament.createdBy.toString() !== req.user) {
-      return void res.status(403).json({ message: "Solo el creador puede iniciar el torneo" });
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
     }
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "El torneo ya inició o finalizó" });

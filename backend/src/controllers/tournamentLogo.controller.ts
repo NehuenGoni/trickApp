@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
-import TournamentModel, { ITournament } from "../models/Tournament";
+import TournamentModel from "../models/Tournament";
 import TournamentLogoModel from "../models/TournamentLogo";
-import { isAdmin } from "../middlewares/roleMiddleware";
 import { validateImageBuffer } from "../utils/imageValidation";
+import { canManageTournament } from "../utils/tournamentAccess";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -12,10 +12,9 @@ interface AuthRequest extends Request {
 /**
  * El logo es cosmético y no afecta la lógica del torneo, así que —a diferencia
  * de `updateTournament`— se puede cambiar en cualquier estado, incluso con el
- * torneo en curso o terminado. Lo único que se exige es ser el creador o admin.
+ * torneo en curso o terminado. El permiso es el mismo que para gestionar el
+ * resto del torneo (ver `utils/tournamentAccess.ts`).
  */
-const canManageLogo = (tournament: ITournament, req: AuthRequest): boolean =>
-  tournament.createdBy.toString() === req.user || isAdmin(req.authUser?.role);
 
 /** Hash corto del contenido: cambia con la imagen y sirve de cache buster. */
 const buildVersion = (buffer: Buffer): string =>
@@ -65,10 +64,10 @@ export const uploadTournamentLogo = async (req: AuthRequest, res: Response): Pro
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (!canManageLogo(tournament, req)) {
+    if (!(await canManageTournament(tournament, req.authUser))) {
       return void res
         .status(403)
-        .json({ message: "Solo el creador del torneo o un admin pueden cambiar el logo" });
+        .json({ message: "No tenés permisos para cambiar el logo de este torneo" });
     }
 
     const validation = validateImageBuffer(file.buffer, file.mimetype);
@@ -105,10 +104,10 @@ export const deleteTournamentLogo = async (req: AuthRequest, res: Response): Pro
     if (!tournament) {
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
-    if (!canManageLogo(tournament, req)) {
+    if (!(await canManageTournament(tournament, req.authUser))) {
       return void res
         .status(403)
-        .json({ message: "Solo el creador del torneo o un admin pueden quitar el logo" });
+        .json({ message: "No tenés permisos para quitar el logo de este torneo" });
     }
 
     await TournamentLogoModel.deleteOne({ tournamentId: tournament._id });

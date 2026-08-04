@@ -32,6 +32,13 @@ export interface ILeague extends Document {
   endDate?: Date;
   isActive: boolean;
   createdBy: mongoose.Types.ObjectId;
+  /**
+   * Usuarios designados por el dueño de la liga (`createdBy`) para operar sus
+   * torneos con los mismos permisos que él (sortear, iniciar, cargar
+   * resultados, inscribir/quitar jugadores) sin poder editar ni borrar la
+   * liga en sí. Ver `utils/tournamentAccess.ts`.
+   */
+  organizers: mongoose.Types.ObjectId[];
   logo?: ILeagueLogoMeta | null;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +61,7 @@ const LeagueSchema = new Schema<ILeague>(
     endDate: { type: Date },
     isActive: { type: Boolean, default: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    organizers: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     logo: { type: LeagueLogoMetaSchema, default: null },
   },
   { timestamps: true }

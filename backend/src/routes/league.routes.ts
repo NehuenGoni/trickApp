@@ -5,6 +5,8 @@ import {
   getLeagueById,
   updateLeague,
   deleteLeague,
+  addOrganizer,
+  removeOrganizer,
   attachTournament,
   detachTournament,
   getLeagueStandings
@@ -28,6 +30,9 @@ router.delete("/:id", authMiddleware, deleteLeague);
 router.get("/:id/standings", getLeagueStandings);
 router.put("/:id/tournaments/:tournamentId", authMiddleware, attachTournament);
 router.delete("/:id/tournaments/:tournamentId", authMiddleware, detachTournament);
+
+router.post("/:id/organizers", authMiddleware, addOrganizer);
+router.delete("/:id/organizers/:userId", authMiddleware, removeOrganizer);
 
 // Público a propósito: un `<img src>` no puede mandar el header Authorization.
 router.get("/:id/logo", getLeagueLogo);

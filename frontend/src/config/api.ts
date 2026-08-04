@@ -90,6 +90,9 @@ const API_ROUTES = {
       `${API_BASE_URL}/leagues/${id}/logo${version ? `?v=${encodeURIComponent(version)}` : ''}`,
     LOGO_UPLOAD: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
     LOGO_DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
+    // POST para agregar (body: { userId }), DELETE con el userId en la URL para quitar.
+    ORGANIZERS: (id: string) => `${API_BASE_URL}/leagues/${id}/organizers`,
+    ORGANIZER: (id: string, userId: string) => `${API_BASE_URL}/leagues/${id}/organizers/${userId}`,
   },
 };
 

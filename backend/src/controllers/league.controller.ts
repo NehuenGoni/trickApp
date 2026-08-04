@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import League from "../models/League";
 import LeagueLogoModel from "../models/LeagueLogo";
 import TournamentModel from "../models/Tournament";
+import User from "../models/User";
 import { canManageLeague, canManageLeagues } from "../utils/leaguePermissions";
 import { computeLeagueStandings } from "../utils/leagueStandings";
 import { withTransaction } from "../utils/withTransaction";
@@ -94,7 +95,7 @@ export const getLeagueById = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const league = await League.findById(id);
+    const league = await League.findById(id).populate("organizers", "username email");
     if (!league) {
       res.status(404).json({ message: "Liga no encontrada" });
       return;
@@ -216,6 +217,91 @@ export const deleteLeague = async (req: Request, res: Response): Promise<void> =
     });
   } catch (error: any) {
     res.status(500).json({ message: "Error al eliminar la liga", error: error.message });
+  }
+};
+
+/**
+ * Agrega un organizador a la liga: alguien designado por el dueño (o un
+ * admin) para operar sus torneos con los mismos permisos que él —sortear,
+ * iniciar, cargar resultados, inscribir/quitar jugadores— sin poder editar ni
+ * borrar la liga en sí (eso sigue siendo solo del dueño, ver
+ * `canManageLeague`). Es lo que resuelve que hoy, si el creador de un torneo
+ * no está presente esa noche, nadie más puede tocarlo.
+ */
+export const addOrganizer = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body as { userId?: string };
+    if (!mongoose.isValidObjectId(id)) {
+      res.status(400).json({ message: "ID de liga inválido" });
+      return;
+    }
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      res.status(400).json({ message: "ID de usuario inválido" });
+      return;
+    }
+
+    const league = await League.findById(id);
+    if (!league) {
+      res.status(404).json({ message: "Liga no encontrada" });
+      return;
+    }
+    if (!canManageLeague(req.authUser, league)) {
+      res.status(403).json({ message: "No tenés permisos para realizar esta acción" });
+      return;
+    }
+    if (league.createdBy.toString() === userId) {
+      res.status(400).json({ message: "El dueño de la liga ya puede gestionar sus torneos" });
+      return;
+    }
+    if (league.organizers.some((o) => o.toString() === userId)) {
+      res.status(409).json({ message: "Ese usuario ya es organizador" });
+      return;
+    }
+
+    const user = await User.findById(userId).select("_id");
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    league.organizers.push(new mongoose.Types.ObjectId(userId));
+    await league.save();
+    res.status(200).json({ message: "Organizador agregado", organizers: league.organizers });
+  } catch (error: any) {
+    res.status(400).json({ message: "Error al agregar el organizador", error: error.message });
+  }
+};
+
+export const removeOrganizer = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id, userId } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      res.status(400).json({ message: "ID de liga inválido" });
+      return;
+    }
+
+    const league = await League.findById(id);
+    if (!league) {
+      res.status(404).json({ message: "Liga no encontrada" });
+      return;
+    }
+    if (!canManageLeague(req.authUser, league)) {
+      res.status(403).json({ message: "No tenés permisos para realizar esta acción" });
+      return;
+    }
+
+    const before = league.organizers.length;
+    league.organizers = league.organizers.filter((o) => o.toString() !== userId);
+    if (league.organizers.length === before) {
+      res.status(404).json({ message: "Ese usuario no es organizador de esta liga" });
+      return;
+    }
+
+    await league.save();
+    res.status(200).json({ message: "Organizador quitado", organizers: league.organizers });
+  } catch (error: any) {
+    res.status(400).json({ message: "Error al quitar el organizador", error: error.message });
   }
 };
 

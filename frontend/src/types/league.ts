@@ -8,9 +8,22 @@ export interface League {
   endDate?: string;
   isActive: boolean;
   createdBy: string;
+  /** IDs de usuario. En la mayoría de los endpoints viene sin poblar. */
+  organizers: string[];
   logo?: TournamentLogoMeta | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LeagueOrganizer {
+  _id: string;
+  username: string;
+  email: string;
+}
+
+/** Cómo llega `league` en `GET /leagues/:id`: `organizers` viene poblado. */
+export interface LeagueWithOrganizers extends Omit<League, 'organizers'> {
+  organizers: LeagueOrganizer[];
 }
 
 /** `League` + contadores que arma `getLeagues` para la lista. */
@@ -48,7 +61,7 @@ export interface LeagueStandingRow {
 
 /** Respuesta de `GET /leagues/:id`: todo lo que necesita LeagueDetails en un solo fetch. */
 export interface LeagueDetail {
-  league: League;
+  league: LeagueWithOrganizers;
   tournaments: LeagueTournamentSummary[];
   standings: LeagueStandingRow[];
   tournamentsCounted: number;

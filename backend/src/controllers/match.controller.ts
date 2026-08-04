@@ -9,6 +9,7 @@ import {
   BRACKET_SLOTS
 } from "../config/constants";
 import { closeTournament } from "./tournament.controller";
+import { canManageTournament } from "../utils/tournamentAccess";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -24,18 +25,19 @@ const TERMINAL_SLOTS = new Set<string>([
 // Solo restringe partidos de torneo: en un amistoso el modelo Match no guarda
 // quién lo creó, así que no hay contra qué autorizar (un amistoso entre
 // invitados no tiene ningún playerId). Se deja igual de laxo que hoy.
-// En torneo, puede modificarlo quien juega el partido o quien creó el torneo.
-const canModifyMatch = async (match: IMatch, userId?: string): Promise<boolean> => {
+// En torneo, puede modificarlo quien juega el partido o quien gestiona el
+// torneo (creador, o dueño/organizador de su liga — ver tournamentAccess.ts).
+const canModifyMatch = async (match: IMatch, req: AuthRequest): Promise<boolean> => {
   if (match.type !== MATCH_TYPES.TOURNAMENT) return true;
 
   const isPlayer = match.teams.some((t) =>
-    t.players.some((p) => p.playerId && p.playerId.toString() === userId)
+    t.players.some((p) => p.playerId && p.playerId.toString() === req.user)
   );
   if (isPlayer) return true;
 
   if (!match.tournament) return false;
   const tournament = await Tournament.findById(match.tournament);
-  return !!tournament && tournament.createdBy.toString() === userId;
+  return !!tournament && (await canManageTournament(tournament, req.authUser));
 };
 
 export const createMatch = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -208,7 +210,7 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
     }
 
@@ -304,7 +306,7 @@ export const updateMatchScore = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
     }
 
@@ -355,7 +357,7 @@ export const deleteMatch = async (req: Request, res: Response): Promise<void> =>
     if (!match) {
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para eliminar este partido" });
     }
     if (match.tournament) {
