@@ -33,11 +33,12 @@ import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
+import TeamRosterEditor, { RosterTeam, RosterPlayer } from '../../components/TeamRosterEditor';
 import useCurrentUser from '../../hooks/useCurrentUser';
-import { TournamentLogoMeta } from '../../types/tournament';
+import { TournamentLogoMeta, TeamFormationMode, poolBasedMode } from '../../types/tournament';
 import { LeagueRef } from '../../types/league';
 import API_ROUTES, { apiRequest } from '../../config/api';
-import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch } from '../../utils/tournament';
+import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch, playerKey } from '../../utils/tournament';
 
 interface PlayerLite {
   playerId?: string;
@@ -71,6 +72,7 @@ interface Team {
     name: string;
     playerId?: string;
     isGuest?: boolean;
+    signupId?: string;
   }>;
   isDrawn?: boolean;
 }
@@ -98,12 +100,13 @@ interface Tournament {
   status: 'upcoming' | 'in_progress' | 'completed';
   type: 'grand-slam' | 'master-1000';
   format: 'duos' | 'trios';
-  teamFormationMode: 'user-formed' | 'random';
+  teamFormationMode: TeamFormationMode;
   guestDrawMode: 'grouped' | 'mixed';
   createdBy: string;
   teams: Team[];
   individualSignups: Signup[];
   draftPairOrder?: string[];
+  rosterEditedAt?: string | null;
   matches: string[];
   playerStats: PlayerStat[];
   pointsAwarded: boolean;
@@ -180,6 +183,9 @@ const TournamentDetails = () => {
   });
   const [drawing, setDrawing] = useState(false);
 
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [confirmRedrawOpen, setConfirmRedrawOpen] = useState(false);
+
   const [expandedPhase, setExpandedPhase] = useState<string | false>(false);
   const [focusMatchId, setFocusMatchId] = useState<string | null>(null);
   const autoExpandedForRef = useRef<string | null>(null);
@@ -233,9 +239,14 @@ const TournamentDetails = () => {
   const teamSize = tournament ? TEAM_SIZE[tournament.format] : 2;
   const targetIndividuals = tournament ? 8 * TEAM_SIZE[tournament.format] : 16;
 
+  // random y creator-formed: la inscripción es individual y los equipos
+  // derivan del pool (`individualSignups`). Espejo de POOL_BASED_FORMATION_MODES
+  // en backend/src/config/constants.ts.
+  const poolBased = !!tournament && poolBasedMode(tournament.teamFormationMode);
+
   const userIsRegistered = (() => {
     if (!tournament) return false;
-    if (tournament.teamFormationMode === 'random') {
+    if (poolBased) {
       return tournament.individualSignups.some((s) => s.userId === currentUserId);
     }
     return tournament.teams.some((t) =>
@@ -243,9 +254,10 @@ const TournamentDetails = () => {
     );
   })();
 
-  // Los equipos "fijos" son los precargados a mano por el creador (addGuestTeam).
-  // Los "sorteados" (isDrawn) salen de un /draw sobre el mismo pool de individualSignups,
-  // así que no se suman aparte o los jugadores quedarían contados dos veces.
+  // Los equipos "fijos" son los precargados a mano por el creador (addGuestTeam,
+  // solo existe en modo random). Los que derivan del pool (isDrawn: sorteados en
+  // random, armados a mano en creator-formed) no se suman aparte o los
+  // jugadores quedarían contados dos veces.
   // IDs que ya están en el torneo: inscriptos sueltos + jugadores de cualquier equipo.
   // Espeja isUserAlreadyInTournament del backend (tournament.controller.ts).
   const registeredUserIds = new Set<string>(
@@ -259,6 +271,30 @@ const TournamentDetails = () => {
 
   const fixedTeams = tournament ? tournament.teams.filter((t) => !t.isDrawn) : [];
   const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === 8;
+
+  // Equipos que se pueden reorganizar con el editor: en los modos con pool,
+  // solo los que derivan de él (los fijos son inmutables ahí); en user-formed,
+  // todos.
+  const editableTeams: Team[] = tournament
+    ? poolBased
+      ? tournament.teams.filter((t) => t.isDrawn)
+      : tournament.teams
+    : [];
+
+  // Inscriptos del pool que todavía no están en ningún equipo: lo que el
+  // editor muestra como "sin asignar".
+  const unassignedPool: Signup[] = (() => {
+    if (!tournament || !poolBased) return [];
+    const assignedKeys = new Set(tournament.teams.flatMap((t) => t.players.map(playerKey)));
+    return tournament.individualSignups.filter((s) => !assignedKeys.has(playerKey(s)));
+  })();
+
+  // Solo aplica a creator-formed: además de completar el pool, hacen falta
+  // los 8 equipos armados y completos para poder iniciar.
+  const teamsReady =
+    !tournament || tournament.teamFormationMode !== 'creator-formed'
+      ? true
+      : tournament.teams.length === 8 && tournament.teams.every((t) => t.players.length === teamSize);
 
   const drawPairings: Array<[Team, Team]> = (() => {
     if (!tournament?.draftPairOrder) return [];
@@ -274,21 +310,17 @@ const TournamentDetails = () => {
 
   const slotsFilled = (() => {
     if (!tournament) return 0;
-    if (tournament.teamFormationMode === 'random') {
+    if (poolBased) {
       return tournament.individualSignups.length + fixedTeams.length * teamSize;
     }
     return tournament.teams.length;
   })();
 
-  const totalSlots = tournament
-    ? tournament.teamFormationMode === 'random'
-      ? targetIndividuals
-      : 8
-    : 0;
+  const totalSlots = tournament ? (poolBased ? targetIndividuals : 8) : 0;
 
   const cupCompletos = tournament
-    ? tournament.teamFormationMode === 'random'
-      ? slotsFilled === targetIndividuals
+    ? poolBased
+      ? slotsFilled === targetIndividuals && teamsReady
       : tournament.teams.length === 8
     : false;
 
@@ -318,7 +350,7 @@ const TournamentDetails = () => {
     if (!tournament || !id) return;
     setError('');
     try {
-      if (tournament.teamFormationMode === 'random') {
+      if (poolBasedMode(tournament.teamFormationMode)) {
         await apiRequest(API_ROUTES.TOURNAMENTS.REGISTER(id), { method: 'POST' });
       } else {
         if (!registerTeamName.trim()) {
@@ -529,6 +561,22 @@ const TournamentDetails = () => {
     }
   };
 
+  // En random, re-sortear rearma los equipos desde cero: si el creador ya
+  // editó la plantilla a mano, se pierde. En los demás modos "sortear" solo
+  // baraja los cruces y no toca los equipos, así que no hace falta avisar.
+  const handleDrawClick = () => {
+    if (tournament?.teamFormationMode === 'random' && tournament.rosterEditedAt) {
+      setConfirmRedrawOpen(true);
+      return;
+    }
+    handleDraw();
+  };
+
+  const handleConfirmRedraw = () => {
+    setConfirmRedrawOpen(false);
+    handleDraw();
+  };
+
   const handleCreatorRemovePlayer = async (signupId: string) => {
     if (!id) return;
     try {
@@ -735,6 +783,30 @@ const TournamentDetails = () => {
     );
   }
 
+  const rosterTeams: RosterTeam[] = editableTeams.map((t) => ({
+    teamId: t.teamId,
+    name: t.name,
+    registeredBy: t.registeredBy,
+    players: t.players.map((p) => ({
+      signupId: p.signupId,
+      playerId: p.playerId,
+      name: p.name,
+      isGuest: p.isGuest
+    }))
+  }));
+
+  const rosterUnassigned: RosterPlayer[] = unassignedPool.map((s) => ({
+    signupId: s.signupId,
+    playerId: s.userId,
+    name: s.name,
+    isGuest: s.isGuest
+  }));
+
+  const handleRosterSaved = (message: string) => {
+    setInfo(message);
+    fetchData();
+  };
+
   return (
     <Box>
       <NavBar />
@@ -838,7 +910,7 @@ const TournamentDetails = () => {
                 Inscripciones
               </Typography>
 
-              {tournament.teamFormationMode === 'random' ? (
+              {poolBased ? (
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                     Inscriptos ({slotsFilled}/{totalSlots}):
@@ -865,6 +937,26 @@ const TournamentDetails = () => {
                             label={p.isGuest ? `${p.name} (invitado)` : p.name}
                           />
                         ))
+                      )}
+                    </Box>
+                  )}
+                  {tournament.teamFormationMode === 'creator-formed' && editableTeams.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        Equipos armados ({editableTeams.length}/8):
+                      </Typography>
+                      {editableTeams.map((t) => (
+                        <Paper key={t.teamId} variant="outlined" sx={{ p: 1, my: 1 }}>
+                          <Typography variant="subtitle2">{t.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {t.players.map((p) => p.name).join(', ') || 'Sin jugadores'}
+                          </Typography>
+                        </Paper>
+                      ))}
+                      {unassignedPool.length > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          Sin asignar: {unassignedPool.length} jugador(es)
+                        </Typography>
                       )}
                     </Box>
                   )}
@@ -916,7 +1008,7 @@ const TournamentDetails = () => {
                     Agregar equipo
                   </Button>
                 )}
-                {isCreator && slotsFilled < totalSlots && tournament.teamFormationMode === 'random' && (
+                {isCreator && slotsFilled < totalSlots && poolBased && (
                   <Button variant="outlined" onClick={() => setCreatorAddPlayerOpen(true)}>
                     Agregar jugador
                   </Button>
@@ -924,6 +1016,16 @@ const TournamentDetails = () => {
                 {isCreator && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
                   <Button variant="outlined" onClick={() => setGuestOpen(true)}>
                     Agregar invitados
+                  </Button>
+                )}
+                {isCreator && tournament.teamFormationMode === 'creator-formed' && (
+                  <Button variant="outlined" onClick={() => setRosterOpen(true)}>
+                    {tournament.teams.length > 0 ? 'Editar equipos' : 'Armar equipos'}
+                  </Button>
+                )}
+                {isCreator && tournament.teamFormationMode === 'user-formed' && tournament.teams.length >= 2 && (
+                  <Button variant="outlined" onClick={() => setRosterOpen(true)}>
+                    Reorganizar jugadores
                   </Button>
                 )}
                 {isCreator && (
@@ -955,18 +1057,28 @@ const TournamentDetails = () => {
               {!hasDraft ? (
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Sorteá los equipos y los cruces de cuartos. Vas a poder ver el resultado
-                    y volver a sortear las veces que quieras antes de iniciar el torneo.
+                    {tournament.teamFormationMode === 'random'
+                      ? 'Sorteá los equipos y los cruces de cuartos. Vas a poder ver el resultado y volver a sortear las veces que quieras antes de iniciar el torneo.'
+                      : 'Sorteá los cruces de cuartos entre los 8 equipos armados.'}
                   </Typography>
-                  <Button variant="contained" disabled={drawing} onClick={handleDraw}>
-                    {drawing ? 'Sorteando...' : 'Sortear equipos y cruces'}
+                  <Button variant="contained" disabled={drawing} onClick={handleDrawClick}>
+                    {drawing
+                      ? 'Sorteando...'
+                      : tournament.teamFormationMode === 'random'
+                      ? 'Sortear equipos y cruces'
+                      : 'Sortear cruces de cuartos'}
                   </Button>
                 </Box>
               ) : (
                 <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Equipos sorteados:
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Equipos:
+                    </Typography>
+                    {tournament.teamFormationMode === 'random' && tournament.rosterEditedAt && (
+                      <Chip size="small" color="warning" label="Editado a mano" />
+                    )}
+                  </Box>
                   {tournament.teams.map((t) => (
                     <Paper key={t.teamId} variant="outlined" sx={{ p: 1, my: 1 }}>
                       <Typography variant="subtitle2">
@@ -991,9 +1103,14 @@ const TournamentDetails = () => {
                   ))}
 
                   <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                    <Button variant="outlined" disabled={drawing} onClick={handleDraw}>
+                    <Button variant="outlined" disabled={drawing} onClick={handleDrawClick}>
                       {drawing ? 'Sorteando...' : 'Re-sortear'}
                     </Button>
+                    {tournament.teamFormationMode === 'random' && (
+                      <Button variant="outlined" onClick={() => setRosterOpen(true)}>
+                        Editar equipos
+                      </Button>
+                    )}
                   </Box>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                     Usá el botón "Iniciar torneo" de arriba cuando estés conforme con el sorteo.
@@ -1070,10 +1187,11 @@ const TournamentDetails = () => {
         >
           <DialogTitle>Inscribirme al torneo</DialogTitle>
           <DialogContent>
-            {tournament.teamFormationMode === 'random' ? (
+            {poolBased ? (
               <Typography>
-                Te vas a inscribir individualmente. El sistema sortea los equipos al iniciar
-                el torneo.
+                {tournament.teamFormationMode === 'random'
+                  ? 'Te vas a inscribir individualmente. El sistema sortea los equipos al iniciar el torneo.'
+                  : 'Te vas a inscribir individualmente. El creador arma los equipos a mano cuando se completa el cupo.'}
               </Typography>
             ) : (
               <Box>
@@ -1230,7 +1348,9 @@ const TournamentDetails = () => {
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
               Podés seleccionar varios jugadores registrados y agregar invitados sueltos.
-              {tournament?.guestDrawMode === 'mixed'
+              {tournament?.teamFormationMode === 'creator-formed'
+                ? ' Cuando se complete el cupo, vas a poder armar los equipos a mano.'
+                : tournament?.guestDrawMode === 'mixed'
                 ? ' Al sortear, los invitados entran al pool general y se mezclan con los jugadores registrados.'
                 : ' Al sortear, los invitados se agrupan entre ellos antes de completar equipos con jugadores registrados.'}
             </Typography>
@@ -1491,6 +1611,34 @@ const TournamentDetails = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setLogoOpen(false)}>Listo</Button>
+          </DialogActions>
+        </Dialog>
+
+        <TeamRosterEditor
+          open={rosterOpen}
+          onClose={() => setRosterOpen(false)}
+          tournamentId={tournament._id}
+          mode={tournament.teamFormationMode}
+          teamSize={teamSize}
+          teams={rosterTeams}
+          unassigned={rosterUnassigned}
+          hasDraft={hasDraft}
+          onSaved={handleRosterSaved}
+        />
+
+        <Dialog open={confirmRedrawOpen} onClose={() => setConfirmRedrawOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Re-sortear los equipos</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              Los equipos se van a rearmar desde cero con los inscriptos. Los cambios que hiciste
+              a mano se van a perder. Los cruces de cuartos también se vuelven a sortear.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmRedrawOpen(false)}>Cancelar</Button>
+            <Button color="warning" variant="contained" onClick={handleConfirmRedraw}>
+              Re-sortear igual
+            </Button>
           </DialogActions>
         </Dialog>
       </Container>

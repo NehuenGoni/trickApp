@@ -36,7 +36,7 @@ import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
-import { TournamentLogoMeta } from '../../types/tournament';
+import { TournamentLogoMeta, TeamFormationMode } from '../../types/tournament';
 import { LeagueListItem, LeagueRef } from '../../types/league';
 
 type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';
@@ -50,7 +50,7 @@ interface AdminTournament {
   status: TournamentStatus;
   type: 'grand-slam' | 'master-1000';
   format: 'duos' | 'trios';
-  teamFormationMode: 'user-formed' | 'random';
+  teamFormationMode: TeamFormationMode;
   pointsAwarded: boolean;
   teams: Array<{ teamId: string; name: string; isDrawn?: boolean }>;
   individualSignups?: Array<{ name: string }>;
@@ -420,7 +420,13 @@ const AdminTournaments = () => {
                 <Chip size="small" label={tournament.format === 'duos' ? 'Duos' : 'Tríos'} />
                 <Chip
                   size="small"
-                  label={tournament.teamFormationMode === 'random' ? 'Equipos sorteados' : 'Equipos armados'}
+                  label={
+                    tournament.teamFormationMode === 'random'
+                      ? 'Equipos sorteados'
+                      : tournament.teamFormationMode === 'creator-formed'
+                      ? 'Equipos a mano'
+                      : 'Equipos armados'
+                  }
                 />
                 <Chip size="small" label={`${tournament.teams?.length || 0} equipos`} />
                 <Chip size="small" label={`${tournament.matches?.length || 0} partidos`} />
@@ -609,6 +615,7 @@ const AdminTournaments = () => {
             >
               <MenuItem value="user-formed">Los jugadores arman su equipo</MenuItem>
               <MenuItem value="random">Sorteo de equipos</MenuItem>
+              <MenuItem value="creator-formed">El creador arma los equipos</MenuItem>
             </TextField>
             <TextField
               select
@@ -802,8 +809,8 @@ const AdminTournaments = () => {
               <Checkbox checked={unmakeTeams} onChange={(e) => setUnmakeTeams(e.target.checked)} />
             }
             label={
-              resetTarget?.teamFormationMode === 'random'
-                ? 'Deshacer también los equipos sorteados'
+              resetTarget?.teamFormationMode !== 'user-formed'
+                ? 'Deshacer también los equipos armados'
                 : 'Eliminar también los equipos inscriptos'
             }
           />

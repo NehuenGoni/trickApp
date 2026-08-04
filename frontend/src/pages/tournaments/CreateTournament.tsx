@@ -23,10 +23,10 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import { canManageLeague } from '../../utils/leaguePermissions';
 import { LeagueListItem } from '../../types/league';
+import { TeamFormationMode } from '../../types/tournament';
 
 type TournamentType = 'grand-slam' | 'master-1000';
 type TournamentFormat = 'duos' | 'trios';
-type TeamFormationMode = 'user-formed' | 'random';
 type GuestDrawMode = 'grouped' | 'mixed';
 
 interface TournamentForm {
@@ -192,6 +192,8 @@ const CreateTournament = () => {
   const formationDescription =
     formData.teamFormationMode === 'user-formed'
       ? 'Cada usuario inscribe su equipo armado (con compañeros elegidos por el).'
+      : formData.teamFormationMode === 'creator-formed'
+      ? 'Cada usuario se inscribe individualmente; cuando se completa el cupo, vos armás los equipos a mano.'
       : 'Cada usuario se inscribe individualmente; los equipos se sortean al iniciar.';
 
   const guestDrawDescription =
@@ -200,7 +202,7 @@ const CreateTournament = () => {
       : 'Los invitados entran al sorteo general y pueden quedar en cualquier equipo junto a jugadores registrados.';
 
   const targetParticipants =
-    formData.teamFormationMode === 'random'
+    formData.teamFormationMode !== 'user-formed'
       ? `${8 * (formData.format === 'duos' ? 2 : 3)} jugadores individuales`
       : '8 equipos';
 
@@ -341,12 +343,16 @@ const CreateTournament = () => {
                     onChange={(_, value) =>
                       value && setFormData({ ...formData, teamFormationMode: value })
                     }
+                    sx={{ flexDirection: { xs: 'column', sm: 'row' }, width: { xs: '100%', sm: 'auto' } }}
                   >
                     <ToggleButton value="user-formed">
                       Equipos armados por jugadores
                     </ToggleButton>
                     <ToggleButton value="random">
                       Equipos aleatorios
+                    </ToggleButton>
+                    <ToggleButton value="creator-formed">
+                      Equipos armados por el creador
                     </ToggleButton>
                   </ToggleButtonGroup>
                   <Typography variant="caption" color="text.secondary" display="block">
@@ -414,6 +420,8 @@ const CreateTournament = () => {
                     <b>Formación de equipos:</b>{' '}
                     {formData.teamFormationMode === 'user-formed'
                       ? 'Armados por jugadores'
+                      : formData.teamFormationMode === 'creator-formed'
+                      ? 'Armados por el creador'
                       : 'Aleatorios'}
                   </Typography>
                   {formData.league && (

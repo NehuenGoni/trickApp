@@ -15,6 +15,14 @@ export interface IPlayer {
   playerId?: mongoose.Types.ObjectId;
   name: string;
   isGuest?: boolean;
+  /**
+   * Entrada de `individualSignups` de la que salió este jugador. Es lo que
+   * permite saber con exactitud qué inscripto corresponde a qué jugador de un
+   * equipo: los invitados no tienen `playerId` y pueden repetir nombre.
+   * Opcional: los torneos ya sorteados antes de esta feature no lo tienen y se
+   * resuelven por el fallback de `playerKey` (ver utils/roster.ts).
+   */
+  signupId?: mongoose.Types.ObjectId;
 }
 
 export interface ITeam {
@@ -22,6 +30,13 @@ export interface ITeam {
   name: string;
   registeredBy?: mongoose.Types.ObjectId;
   players: IPlayer[];
+  /**
+   * El equipo deriva de `individualSignups`: sus jugadores ya están contados en
+   * el pool y no se suman aparte al calcular cupos (ver `countFilledSlots`).
+   * Lo marcan tanto el sorteo de `random` como el armado manual de
+   * `creator-formed`. Los equipos cargados enteros a mano (`addGuestTeam`,
+   * inscripción en `user-formed`) van sin el flag y sí ocupan cupo propio.
+   */
   isDrawn?: boolean;
 }
 
@@ -61,6 +76,12 @@ export interface ITournament extends Document {
   teams: ITeam[];
   individualSignups: IIndividualSignup[];
   draftPairOrder?: mongoose.Types.ObjectId[];
+  /**
+   * Última vez que el creador reorganizó los equipos a mano (roster editor).
+   * Sirve para avisar, antes de re-sortear en modo `random`, que esos cambios
+   * se van a perder. Se limpia al sortear y al iniciar.
+   */
+  rosterEditedAt?: Date;
   matches: mongoose.Types.ObjectId[];
   playerStats: IPlayerStat[];
   pointsAwarded: boolean;
@@ -83,7 +104,8 @@ const PlayerSchema = new Schema<IPlayer>({
     }
   },
   name: { type: String, required: false },
-  isGuest: { type: Boolean, default: false }
+  isGuest: { type: Boolean, default: false },
+  signupId: { type: Schema.Types.ObjectId, required: false }
 });
 
 const TeamSchema = new Schema<ITeam>({
@@ -150,6 +172,7 @@ const tournamentSchema = new Schema<ITournament>(
     teams: { type: [TeamSchema], default: [] },
     individualSignups: { type: [IndividualSignupSchema], default: [] },
     draftPairOrder: { type: [Schema.Types.ObjectId], default: undefined },
+    rosterEditedAt: { type: Date, default: undefined },
     startDate: { type: Date, required: true },
     description: { type: String },
     matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],

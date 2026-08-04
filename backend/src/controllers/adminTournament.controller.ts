@@ -216,9 +216,10 @@ export const resetTournament = async (req: Request, res: Response): Promise<void
 
     let signupsRestored = 0;
     if (unmakeTeams) {
-      if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
-        // Los equipos sorteados se deshacen y sus jugadores vuelven a la lista
-        // de inscriptos; los equipos cargados a mano se conservan.
+      if (tournament.teamFormationMode !== TEAM_FORMATION_MODES.USER_FORMED) {
+        // random y creator-formed: los equipos derivados del pool (isDrawn) se
+        // deshacen y sus jugadores vuelven a la lista de inscriptos; los
+        // equipos cargados enteros a mano (`addGuestTeam`) se conservan.
         const drawn = tournament.teams.filter((t) => t.isDrawn);
         const restored: IIndividualSignup[] = [];
         for (const team of drawn) {

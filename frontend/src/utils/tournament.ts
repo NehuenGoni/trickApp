@@ -1,6 +1,18 @@
 // Labels y orden de fases del bracket, compartidos entre TournamentDetails
 // (vista de administración) y la vista de transmisión en vivo (/live/:id).
 
+/**
+ * Clave para comparar un jugador entre el pool de inscriptos y los equipos.
+ * Preferimos `signupId`; los torneos ya sorteados antes de esta feature no lo
+ * tienen, así que caemos a `playerId` y, para invitados legacy, al nombre
+ * normalizado. Espejo de `playerKey` en `backend/src/utils/roster.ts`.
+ */
+export const playerKey = (p: { signupId?: string; playerId?: string; name: string }): string => {
+  if (p.signupId) return `s:${p.signupId}`;
+  if (p.playerId) return `u:${p.playerId}`;
+  return `g:${p.name.trim().toLowerCase()}`;
+};
+
 export const PHASE_LABELS: Record<string, string> = {
   'quarter-finals': 'Cuartos de Final',
   'semifinals-gold': 'Semifinales de Oro',

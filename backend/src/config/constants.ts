@@ -61,8 +61,20 @@ export const TOURNAMENT_FORMATS = {
 
 export const TEAM_FORMATION_MODES = {
   USER_FORMED: 'user-formed',
-  RANDOM: 'random'
+  RANDOM: 'random',
+  CREATOR_FORMED: 'creator-formed'
 } as const;
+
+/**
+ * Modos en los que la inscripción es individual y `individualSignups` es la
+ * fuente de verdad de quién está en el torneo. Los equipos derivan de ese pool
+ * (sorteados en `random`, armados a mano en `creator-formed`), así que sus
+ * jugadores NO se cuentan aparte al calcular cupos.
+ */
+export const POOL_BASED_FORMATION_MODES: string[] = [
+  TEAM_FORMATION_MODES.RANDOM,
+  TEAM_FORMATION_MODES.CREATOR_FORMED
+];
 
 export const GUEST_DRAW_MODES = {
   GROUPED: 'grouped',

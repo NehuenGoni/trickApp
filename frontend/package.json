@@ -55,6 +55,8 @@
     "@types/jest": "^30.0.0",
     "@types/lodash": "^4.17.23",
     "@types/react-router-dom": "^5.3.3",
-    "jest": "^27.5.1"
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "ts-jest": "^29.4.12"
   }
 }

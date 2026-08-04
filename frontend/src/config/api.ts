@@ -44,6 +44,7 @@ const API_ROUTES = {
       `${API_BASE_URL}/tournaments/${id}/live${since ? `?since=${encodeURIComponent(since)}` : ''}`,
     SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
     SIGNUP_ADMIN_REMOVE: (id: string, signupId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${signupId}`,
+    ROSTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/roster`,
     // El `version` va como query param para invalidar el cache del browser:
     // el endpoint responde con `Cache-Control: immutable`, así que la única
     // forma de que refetchee una imagen nueva es que cambie la URL.

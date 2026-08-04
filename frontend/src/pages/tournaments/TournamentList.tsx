@@ -28,7 +28,7 @@ import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import TournamentLogo from '../../components/TournamentLogo';
-import { TournamentLogoMeta } from '../../types/tournament';
+import { TournamentLogoMeta, TeamFormationMode, poolBasedMode } from '../../types/tournament';
 import { LeagueRef } from '../../types/league';
 
 interface Tournament {
@@ -40,11 +40,12 @@ interface Tournament {
   status: 'upcoming' | 'in_progress' | 'completed';
   type?: 'grand-slam' | 'master-1000';
   format?: 'duos' | 'trios';
-  teamFormationMode?: 'user-formed' | 'random';
+  teamFormationMode?: TeamFormationMode;
   league?: LeagueRef | null;
   teams: Array<{
     teamId: string;
     name: string;
+    isDrawn?: boolean;
     players: Array<{
       name: string;
       playerId?: string;
@@ -141,9 +142,12 @@ const TournamentList = () => {
 
   const getCapacityLabel = (t: Tournament) => {
     const teamSize = t.format === 'trios' ? 3 : 2;
-    if (t.teamFormationMode === 'random') {
-      const filled =
-        (t.individualSignups?.length || 0) + (t.teams?.length || 0) * teamSize;
+    if (t.teamFormationMode && poolBasedMode(t.teamFormationMode)) {
+      // Los equipos derivados del pool (isDrawn) no se suman aparte: sus
+      // jugadores ya están contados en individualSignups. Espejo de
+      // `slotsFilled` en TournamentDetails.tsx.
+      const fixedTeams = (t.teams || []).filter((team) => !team.isDrawn).length;
+      const filled = (t.individualSignups?.length || 0) + fixedTeams * teamSize;
       return `${filled}/${8 * teamSize} jugadores`;
     }
     return `${t.teams?.length || 0}/8 equipos`;

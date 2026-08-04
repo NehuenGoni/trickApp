@@ -27,6 +27,7 @@ import {
   MATCH_TYPES
 } from "../config/constants";
 import { withTransaction } from "../utils/withTransaction";
+import { playerKey, validateRosterPayload } from "../utils/roster";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -39,8 +40,7 @@ const isValidFormat = (value: unknown): value is keyof typeof FORMAT_TEAM_SIZE =
   value === TOURNAMENT_FORMATS.DUOS || value === TOURNAMENT_FORMATS.TRIOS;
 
 const isValidFormationMode = (value: unknown) =>
-  value === TEAM_FORMATION_MODES.USER_FORMED ||
-  value === TEAM_FORMATION_MODES.RANDOM;
+  (Object.values(TEAM_FORMATION_MODES) as string[]).includes(value as string);
 
 const isValidGuestDrawMode = (value: unknown): value is GuestDrawMode =>
   value === GUEST_DRAW_MODES.GROUPED || value === GUEST_DRAW_MODES.MIXED;
@@ -98,6 +98,68 @@ const isUserAlreadyInTournament = (
 };
 
 /**
+ * Cupos ocupados de un torneo. Espeja `slotsFilled` de TournamentDetails.tsx:
+ * en los modos con pool (random, creator-formed) los equipos derivados de él
+ * (`isDrawn`) no se suman aparte, sus jugadores ya están contados ahí; solo
+ * suman los equipos "fijos" cargados enteros a mano (`addGuestTeam`).
+ */
+export const countFilledSlots = (tournament: ITournament): number => {
+  const size = FORMAT_TEAM_SIZE[tournament.format];
+  if (tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED) {
+    return tournament.teams.length * size;
+  }
+  return (
+    tournament.individualSignups.length +
+    tournament.teams.filter((t) => !t.isDrawn).length * size
+  );
+};
+
+/**
+ * Saca del pool a los inscriptos que cumplan `predicate` y también de
+ * cualquier equipo en el que ya estuvieran. Sin esto, quitar del pool a
+ * alguien ya sorteado/asignado deja un jugador fantasma: sigue apareciendo en
+ * el cuadro pero ya no está inscripto. Los equipos que quedan vacíos se
+ * eliminan; los que quedan incompletos se dejan así (el gate de "cupos
+ * completos" no deja iniciar el torneo).
+ */
+export const removeSignupsFromTournament = (
+  tournament: ITournament,
+  predicate: (s: IIndividualSignup) => boolean
+): { removed: number; teamsTouched: number; teamsDropped: number } => {
+  const toRemove = tournament.individualSignups.filter(predicate);
+  if (toRemove.length === 0) {
+    return { removed: 0, teamsTouched: 0, teamsDropped: 0 };
+  }
+  const removedKeys = new Set(toRemove.map((s) => playerKey(s)));
+
+  tournament.individualSignups = tournament.individualSignups.filter(
+    (s) => !removedKeys.has(playerKey(s))
+  );
+
+  let teamsTouched = 0;
+  let teamsDropped = 0;
+  const survivingTeams: ITeam[] = [];
+  for (const team of tournament.teams) {
+    const before = team.players.length;
+    const players = team.players.filter((p) => !removedKeys.has(playerKey(p)));
+    if (players.length !== before) teamsTouched++;
+    if (players.length === 0 && before > 0) {
+      teamsDropped++;
+      continue;
+    }
+    team.players = players;
+    survivingTeams.push(team);
+  }
+  tournament.teams = survivingTeams;
+
+  if (teamsDropped > 0) {
+    tournament.draftPairOrder = undefined;
+  }
+
+  return { removed: toRemove.length, teamsTouched, teamsDropped };
+};
+
+/**
  * Arma los equipos faltantes a partir de los inscriptos individuales. El criterio
  * para los invitados depende de `guestDrawMode`:
  * - `grouped`: se agrupan entre ellos y van al frente de la lista antes de cortar
@@ -134,7 +196,8 @@ export const buildDrawnTeams = (
       players: players.map((s) => ({
         playerId: s.userId,
         name: s.name,
-        isGuest: s.isGuest
+        isGuest: s.isGuest,
+        signupId: s.signupId
       })),
       isDrawn: true
     });
@@ -364,41 +427,6 @@ export const createTeamInTournament = async (req: AuthRequest, res: Response): P
   }
 };
 
-export const updateTeam = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { tournamentId, teamId } = req.params;
-    const { players } = req.body;
-
-    const tournament = await TournamentModel.findById(tournamentId);
-    if (!tournament) {
-      return void res.status(404).json({ message: "Torneo no encontrado." });
-    }
-    if (tournament.status !== "upcoming") {
-      res
-        .status(400)
-        .json({ message: "No se pueden modificar equipos en un torneo iniciado" });
-      return;
-    }
-
-    const teamIndex = tournament.teams.findIndex(
-      (team) => team.teamId.toString() === teamId
-    );
-    if (teamIndex === -1) {
-      return void res.status(404).json({ message: "Equipo no encontrado." });
-    }
-
-    tournament.teams[teamIndex].players = players;
-    await tournament.save();
-
-    res.status(200).json({
-      message: "Equipo actualizado correctamente.",
-      team: tournament.teams[teamIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Error al actualizar el equipo", error });
-  }
-};
-
 export const removeTeam = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { tournamentId, teamId } = req.params;
@@ -532,10 +560,16 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
       return void res.status(400).json({ message: "Ya estás inscripto en este torneo" });
     }
 
-    const targetSignups = TOURNAMENT_TEAMS_COUNT * FORMAT_TEAM_SIZE[tournament.format];
-    if (tournament.individualSignups.length >= targetSignups) {
+    const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    const targetSignups = TOURNAMENT_TEAMS_COUNT * expectedSize;
+    if (countFilledSlots(tournament) >= targetSignups) {
       return void res.status(400).json({ message: "El torneo ya está completo" });
     }
+    // Los equipos fijos (cargados enteros a mano) también ocupan cupo aunque no
+    // estén en `individualSignups`, así que el tope efectivo del pool es
+    // `targetSignups` menos lo que ya ocupan esos equipos fijos.
+    const fixedSlots = tournament.teams.filter((t) => !t.isDrawn).length * expectedSize;
+    const signupCap = targetSignups - fixedSlots;
 
     const userDoc = await User.findById(userId);
     if (!userDoc) {
@@ -546,7 +580,7 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
       {
         _id: tournament._id,
         status: "upcoming",
-        $expr: { $lt: [{ $size: "$individualSignups" }, targetSignups] },
+        $expr: { $lt: [{ $size: "$individualSignups" }, signupCap] },
         "individualSignups.userId": { $ne: new mongoose.Types.ObjectId(userId) }
       },
       {
@@ -601,11 +635,11 @@ export const unregisterFromTournament = async (req: AuthRequest, res: Response):
       return void res.status(200).json({ message: "Equipo desinscripto" });
     }
 
-    const before = tournament.individualSignups.length;
-    tournament.individualSignups = tournament.individualSignups.filter(
-      (s) => !s.userId || s.userId.toString() !== userId
+    const { removed } = removeSignupsFromTournament(
+      tournament,
+      (s) => !!s.userId && s.userId.toString() === userId
     );
-    if (tournament.individualSignups.length === before) {
+    if (removed === 0) {
       return void res.status(404).json({ message: "No estás inscripto en este torneo" });
     }
     await tournament.save();
@@ -636,6 +670,11 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "El torneo ya inició" });
     }
+    if (tournament.teamFormationMode === TEAM_FORMATION_MODES.CREATOR_FORMED) {
+      return void res.status(400).json({
+        message: "En este modo agregá jugadores al torneo y después armá los equipos"
+      });
+    }
     if (!name || !Array.isArray(members) || members.length === 0) {
       return void res.status(400).json({ message: "Faltan datos del equipo" });
     }
@@ -652,8 +691,7 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
       }
     } else {
       const target = TOURNAMENT_TEAMS_COUNT * expectedSize;
-      const fixedTeams = tournament.teams.filter((t) => !t.isDrawn).length;
-      const taken = tournament.individualSignups.length + fixedTeams * expectedSize;
+      const taken = countFilledSlots(tournament);
       if (taken + members.length > target) {
         return void res.status(400).json({
           message: "Agregar este equipo excede los cupos del torneo"
@@ -697,9 +735,9 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "Las inscripciones están cerradas" });
     }
-    if (tournament.teamFormationMode !== TEAM_FORMATION_MODES.RANDOM) {
+    if (tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED) {
       return void res.status(400).json({
-        message: "Este endpoint solo aplica en modo de equipos aleatorios. Para el modo 'user-formed' usá POST /:tournamentId/teams"
+        message: "Este endpoint no aplica en modo 'user-formed'. Usá POST /:tournamentId/teams"
       });
     }
 
@@ -731,9 +769,10 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
     const targetSignups = TOURNAMENT_TEAMS_COUNT * expectedSize;
     const incoming = uniqueUserIds.length + allGuestNames.length;
-    if (tournament.individualSignups.length + incoming > targetSignups) {
+    const taken = countFilledSlots(tournament);
+    if (taken + incoming > targetSignups) {
       return void res.status(400).json({
-        message: `Cupos insuficientes: quedan ${targetSignups - tournament.individualSignups.length} lugares`
+        message: `Cupos insuficientes: quedan ${targetSignups - taken} lugares`
       });
     }
 
@@ -774,23 +813,83 @@ export const creatorRemoveSignup = async (req: AuthRequest, res: Response): Prom
     if (tournament.status !== "upcoming") {
       return void res.status(400).json({ message: "El torneo ya inició" });
     }
-    if (tournament.teamFormationMode !== TEAM_FORMATION_MODES.RANDOM) {
+    if (tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED) {
       return void res.status(400).json({
-        message: "Este endpoint solo aplica en modo aleatorio. Para el modo 'user-formed' usá DELETE /:tournamentId/teams/:teamId"
+        message: "Este endpoint no aplica en modo 'user-formed'. Usá DELETE /:tournamentId/teams/:teamId"
       });
     }
 
-    const before = tournament.individualSignups.length;
-    tournament.individualSignups = tournament.individualSignups.filter(
-      (s) => s.signupId.toString() !== signupId
+    const { removed, teamsTouched, teamsDropped } = removeSignupsFromTournament(
+      tournament,
+      (s) => s.signupId.toString() === signupId
     );
-    if (tournament.individualSignups.length === before) {
+    if (removed === 0) {
       return void res.status(404).json({ message: "El inscripto no existe" });
     }
     await tournament.save();
-    res.status(200).json({ message: "Jugador quitado del torneo" });
+    const incompleteRemaining = teamsTouched - teamsDropped;
+    res.status(200).json({
+      message:
+        incompleteRemaining > 0
+          ? `Jugador quitado del torneo. Quedó ${incompleteRemaining} equipo(s) incompleto(s).`
+          : "Jugador quitado del torneo"
+    });
   } catch (error) {
     res.status(500).json({ message: "Error al quitar jugador", error });
+  }
+};
+
+/**
+ * Reemplaza de una vez la composición de los equipos editables del torneo
+ * (el "roster editor" de mover/intercambiar jugadores). No agrega ni quita
+ * gente del torneo, solo reparte: la validación central es que el
+ * multiconjunto de jugadores del payload coincida con el universo movible
+ * (ver `validateRosterPayload`). Preserva los cruces guardados
+ * (`draftPairOrder`) salvo que haya cambiado el conjunto de equipos.
+ */
+export const replaceTournamentRoster = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const tournament = await TournamentModel.findById(id);
+    if (!tournament) {
+      return void res.status(404).json({ message: "Torneo no encontrado" });
+    }
+    if (tournament.createdBy.toString() !== req.user) {
+      return void res.status(403).json({ message: "Solo el creador puede reorganizar los equipos" });
+    }
+    if (tournament.status !== "upcoming") {
+      return void res.status(400).json({
+        message: "Solo se pueden reorganizar los equipos de un torneo que aún no comenzó"
+      });
+    }
+
+    const result = validateRosterPayload({
+      payload: req.body,
+      teamFormationMode: tournament.teamFormationMode,
+      teamSize: FORMAT_TEAM_SIZE[tournament.format],
+      existingTeams: tournament.teams,
+      individualSignups: tournament.individualSignups
+    });
+
+    if (!result.ok) {
+      return void res.status(result.status).json({ message: result.error });
+    }
+
+    tournament.teams = result.teams;
+    tournament.rosterEditedAt = new Date();
+    if (result.draftInvalidated) {
+      tournament.draftPairOrder = undefined;
+    }
+    await tournament.save();
+
+    res.status(200).json({
+      message: "Equipos actualizados",
+      teams: tournament.teams,
+      draftInvalidated: result.draftInvalidated
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error al reorganizar los equipos", error });
   }
 };
 
@@ -858,9 +957,14 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
-    tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
 
     if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
+      // Solo en random el sorteo rearma los equipos desde cero: descarta el
+      // sorteo previo (pero preserva los equipos fijos, que no tienen isDrawn)
+      // y vuelve a repartir el pool. En los otros modos los equipos ya están
+      // armados (por los jugadores o a mano) y este endpoint solo sortea los
+      // cruces, así que NO hay que tocar `tournament.teams` acá.
+      tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
       const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
       const filledFromTeams = tournament.teams.length * expectedSize;
       const filledFromSignups = tournament.individualSignups.length;
@@ -878,11 +982,22 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
         tournament.guestDrawMode
       );
       tournament.teams.push(...drawnTeams);
+      // Se rearmaron los equipos desde cero: cualquier edición manual previa
+      // ya no aplica.
+      tournament.rosterEditedAt = undefined;
     } else {
       if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
         return void res.status(400).json({
           message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
         });
+      }
+      if (tournament.teamFormationMode === TEAM_FORMATION_MODES.CREATOR_FORMED) {
+        const incomplete = tournament.teams.some((t) => t.players.length !== expectedSize);
+        if (incomplete) {
+          return void res.status(400).json({
+            message: "Todos los equipos deben estar completos antes de sortear los cruces"
+          });
+        }
       }
     }
 
@@ -961,6 +1076,14 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
           return void res.status(400).json({
             message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
           });
+        }
+        if (tournament.teamFormationMode === TEAM_FORMATION_MODES.CREATOR_FORMED) {
+          const incomplete = tournament.teams.some((t) => t.players.length !== expectedSize);
+          if (incomplete) {
+            return void res.status(400).json({
+              message: "Todos los equipos deben estar completos antes de iniciar"
+            });
+          }
         }
       }
     }
@@ -1067,6 +1190,7 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     tournament.matches = Array.from(slotToMatchId.values());
     tournament.individualSignups = [];
     tournament.draftPairOrder = undefined;
+    tournament.rosterEditedAt = undefined;
     tournament.status = "in_progress";
     await tournament.save();
 
