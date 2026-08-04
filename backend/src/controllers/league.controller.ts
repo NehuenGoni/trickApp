@@ -7,6 +7,8 @@ import User from "../models/User";
 import { canManageLeague, canManageLeagues } from "../utils/leaguePermissions";
 import { computeLeagueStandings } from "../utils/leagueStandings";
 import { withTransaction } from "../utils/withTransaction";
+import { isAdmin } from "../middlewares/roleMiddleware";
+import { PLANS } from "../config/plans";
 
 // Campos del torneo que necesita el frontend para listarlo dentro de una liga,
 // sin `playerStats` (eso ya lo resume `computeLeagueStandings`).
@@ -15,8 +17,27 @@ const TOURNAMENT_SUMMARY_FIELDS = "name status type startDate logo";
 export const createLeague = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!canManageLeagues(req.authUser)) {
-      res.status(403).json({ message: "No tenés permisos para realizar esta acción" });
+      // 402, no 403: la razón puntual es "necesitás pagar", no "no tenés
+      // rol" — el frontend usa el código para distinguir y llevar a /planes
+      // en vez de mostrar un error genérico.
+      res.status(402).json({ message: "Necesitás una suscripción activa para crear una liga" });
       return;
+    }
+
+    // El admin no tiene tope (gestiona el panel, no es un cliente pago). Para
+    // el resto, el tope depende del plan — ver `config/plans.ts`.
+    if (!isAdmin(req.authUser?.role)) {
+      const plan = req.authUser!.billing?.plan ?? "free";
+      const maxLeagues = PLANS[plan].maxLeagues;
+      if (maxLeagues !== Infinity) {
+        const ownedCount = await League.countDocuments({ createdBy: req.authUser!.id });
+        if (ownedCount >= maxLeagues) {
+          res.status(400).json({
+            message: `Tu plan permite hasta ${maxLeagues} liga(s). Pasate a un plan superior para crear otra.`
+          });
+          return;
+        }
+      }
     }
 
     const { name, description, startDate, endDate, isActive } = req.body;

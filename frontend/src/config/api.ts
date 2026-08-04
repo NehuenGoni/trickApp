@@ -66,6 +66,13 @@ const API_ROUTES = {
     TOURNAMENT_RECALCULATE: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/recalculate`,
     TOURNAMENT_MATCHES: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/matches`,
     MATCH: (id: string) => `${API_BASE_URL}/admin/matches/${id}`,
+    SUBSCRIPTIONS: `${API_BASE_URL}/admin/subscriptions`,
+    USER_BILLING: (id: string) => `${API_BASE_URL}/admin/users/${id}/billing`,
+    USER_SUBSCRIPTION: (id: string) => `${API_BASE_URL}/admin/users/${id}/subscription`,
+    USER_PLAN: (id: string) => `${API_BASE_URL}/admin/users/${id}/plan`,
+  },
+  BILLING: {
+    ME: `${API_BASE_URL}/billing/me`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
@@ -95,6 +102,28 @@ const API_ROUTES = {
     ORGANIZER: (id: string, userId: string) => `${API_BASE_URL}/leagues/${id}/organizers/${userId}`,
   },
 };
+
+/**
+ * El backend gatea la creación de torneos y ligas con 402, y manda el
+ * detalle del plan y el uso en el body (ver `BILLING_GATE_MESSAGES` en
+ * `tournament.controller.ts` y el gate de `createLeague`). Este error tipado
+ * es lo que le permite a la UI abrir el diálogo de upgrade con ese dato
+ * concreto, en vez de mostrar un toast rojo genérico indistinguible de
+ * cualquier otro 4xx.
+ */
+export class PaymentRequiredError extends Error {
+  reason?: string;
+  plan?: string;
+  usage?: { periodKey: string; tournamentsCreated: number; tournamentsTotal: number };
+
+  constructor(message: string, data: { reason?: string; plan?: string; usage?: PaymentRequiredError['usage'] }) {
+    super(message);
+    this.name = 'PaymentRequiredError';
+    this.reason = data.reason;
+    this.plan = data.plan;
+    this.usage = data.usage;
+  }
+}
 
 export const apiRequest = async (url: string, options: RequestInit & { params?: Record<string, any> } = {}) => {
   const token = localStorage.getItem('token');
@@ -148,6 +177,14 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         localStorage.removeItem("token");
         window.location.href = "/login";
         return;
+      }
+
+      if (response.status === 402) {
+        throw new PaymentRequiredError(errorMessage, {
+          reason: parsedData?.reason,
+          plan: parsedData?.plan,
+          usage: parsedData?.usage
+        });
       }
 
       throw new Error(errorMessage);

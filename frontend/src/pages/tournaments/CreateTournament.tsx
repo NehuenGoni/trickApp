@@ -19,11 +19,28 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import LogoUploader from '../../components/LogoUploader';
-import API_ROUTES, { apiRequest } from '../../config/api';
+import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
+import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import { canManageLeague } from '../../utils/leaguePermissions';
 import { LeagueListItem } from '../../types/league';
 import { TeamFormationMode } from '../../types/tournament';
+
+/**
+ * Estimación en cliente de si queda cupo para crear un torneo, SOLO para
+ * decidir si mostrar el formulario o la pantalla de "necesitás un plan" antes
+ * de que el usuario complete todo. El backend es quien decide de verdad en el
+ * submit (`consumeTournamentSlot`) — acá no hace falta replicar el reset
+ * perezoso del período con exactitud, es una guía, no el gate real.
+ */
+const hasEstimatedSlot = (billing: ReturnType<typeof useBilling>['billing']): boolean => {
+  if (!billing) return true; // todavía no cargó: no bloquear en base a un estado desconocido
+  if (billing.plan === 'free') return billing.usage.tournamentsTotal < 1;
+  if (!billing.isActive) return false;
+  const limit = billing.limits.tournamentsPerMonth;
+  if (limit === null) return true;
+  return billing.usage.tournamentsCreated < limit;
+};
 
 type TournamentType = 'grand-slam' | 'master-1000';
 type TournamentFormat = 'duos' | 'trios';
@@ -51,7 +68,8 @@ const CreateTournament = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const leagueParam = searchParams.get('league');
-  const { user } = useCurrentUser();
+  const { user, isAdmin } = useCurrentUser();
+  const { billing, loading: loadingBilling } = useBilling();
   const [activeStep, setActiveStep] = useState(0);
   const [formData, setFormData] = useState<TournamentForm>({
     name: '',
@@ -173,8 +191,18 @@ const CreateTournament = () => {
         }
       }
 
+      clearBillingCache(); // el uso cambió: la próxima lectura de /billing/me debe reflejarlo
       navigate(`/tournaments/${created._id}`);
     } catch (err) {
+      if (err instanceof PaymentRequiredError) {
+        // El estado local pudo haber quedado desactualizado (otra pestaña,
+        // el mes cambió mientras completaba el formulario): el backend es la
+        // verdad final, así que se lo manda a resolverlo en vez de dejarlo
+        // reintentando contra un gate que ya sabe que va a rechazar.
+        clearBillingCache();
+        navigate('/planes', { state: { message: err.message } });
+        return;
+      }
       const e = err as { response?: { status?: number }; message?: string };
       if (isAuthError(e)) {
         localStorage.removeItem('token');
@@ -205,6 +233,33 @@ const CreateTournament = () => {
     formData.teamFormationMode !== 'user-formed'
       ? `${8 * (formData.format === 'duos' ? 2 : 3)} jugadores individuales`
       : '8 equipos';
+
+  // Falla temprano: si ya sabemos que no hay cupo, no tiene sentido hacer
+  // completar todo el formulario para recién ahí mostrar el 402. Los admins
+  // no pasan por el gate de billing (ver `tournament.controller.ts`).
+  if (!isAdmin && !loadingBilling && !hasEstimatedSlot(billing)) {
+    const outOfFreeSlot = billing?.plan === 'free';
+    return (
+      <Box>
+        <NavBar />
+        <Container maxWidth="sm" sx={{ mt: 4 }}>
+          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
+            <Typography variant="h5" gutterBottom>
+              {outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
+            </Typography>
+            <Typography color="text.secondary" sx={{ mb: 3 }}>
+              {outOfFreeSlot
+                ? 'El plan gratuito incluye un torneo, de por vida. Elegí un plan para seguir creando torneos.'
+                : 'Ya usaste los torneos de este mes en tu plan actual. Pasate a un plan superior o esperá al próximo período.'}
+            </Typography>
+            <Button variant="contained" onClick={() => navigate('/planes')}>
+              Ver planes
+            </Button>
+          </Paper>
+        </Container>
+      </Box>
+    );
+  }
 
   return (
     <Box>

@@ -29,9 +29,32 @@ import {
 import { withTransaction } from "../utils/withTransaction";
 import { playerKey, validateRosterPayload } from "../utils/roster";
 import { canManageTournament } from "../utils/tournamentAccess";
+import { isAdmin } from "../middlewares/roleMiddleware";
+import { consumeTournamentSlot, releaseTournamentSlot, ConsumeSlotResult } from "../services/billing";
+import { PlanId } from "../config/plans";
 
 interface AuthRequest extends Request {
   user?: string;
+}
+
+/** Motivo por el que `consumeTournamentSlot` rechazó — ver `services/billing.ts`. */
+type BillingGateReason = Extract<ConsumeSlotResult, { ok: false }>["reason"];
+
+const BILLING_GATE_MESSAGES: Record<BillingGateReason, string> = {
+  no_free_slot: "Ya usaste tu torneo de prueba gratuito. Elegí un plan para seguir creando torneos.",
+  no_subscription: "Necesitás una suscripción activa para crear un torneo.",
+  monthly_limit_reached: "Llegaste al límite de torneos de tu plan este mes. Pasate a un plan superior o esperá al próximo período."
+};
+
+/** Error tipado que `createTournament` traduce a un 402 con el detalle del plan y el uso. */
+class BillingGateError extends Error {
+  constructor(
+    public reason: BillingGateReason,
+    public plan: PlanId,
+    public usage: Extract<ConsumeSlotResult, { ok: false }>["usage"]
+  ) {
+    super(BILLING_GATE_MESSAGES[reason]);
+  }
 }
 
 const isValidTournamentType = (value: unknown): value is keyof typeof POINTS_TABLE =>
@@ -242,26 +265,54 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
   }
 
   try {
-    const tournament = new TournamentModel({
-      name,
-      startDate,
-      description,
-      type,
-      format,
-      teamFormationMode,
-      ...(guestDrawMode !== undefined ? { guestDrawMode } : {}),
-      createdBy,
-      status: "upcoming",
-      teams: [],
-      individualSignups: [],
-      matches: [],
-      playerStats: [],
-      pointsAwarded: false,
-      league
+    // El admin no paga: gestiona el panel, no es un cliente. Para el resto,
+    // el cupo se consume ATÓMICAMENTE (ver `consumeTournamentSlot`) dentro de
+    // la misma transacción que crea el torneo — si el `save()` fallara por
+    // cualquier motivo, el rollback también devuelve el cupo consumido.
+    const isPrivileged = isAdmin(req.authUser?.role);
+    let billingCharge: { plan: PlanId; periodKey: string; chargedAt: Date } | undefined;
+
+    const tournament = await withTransaction(async (session) => {
+      if (!isPrivileged) {
+        const slot = await consumeTournamentSlot(createdBy!, session);
+        if (!slot.ok) {
+          throw new BillingGateError(slot.reason, slot.plan, slot.usage);
+        }
+        billingCharge = { plan: slot.plan, periodKey: slot.periodKey, chargedAt: new Date() };
+      }
+
+      const doc = new TournamentModel({
+        name,
+        startDate,
+        description,
+        type,
+        format,
+        teamFormationMode,
+        ...(guestDrawMode !== undefined ? { guestDrawMode } : {}),
+        createdBy,
+        status: "upcoming",
+        teams: [],
+        individualSignups: [],
+        matches: [],
+        playerStats: [],
+        pointsAwarded: false,
+        league,
+        billing: billingCharge ?? null
+      });
+      await doc.save({ session });
+      return doc;
     });
-    await tournament.save();
+
     res.status(201).json(tournament);
   } catch (error) {
+    if (error instanceof BillingGateError) {
+      return void res.status(402).json({
+        message: BILLING_GATE_MESSAGES[error.reason],
+        reason: error.reason,
+        plan: error.plan,
+        usage: error.usage
+      });
+    }
     res.status(400).json({ message: "Error al crear el torneo", error });
   }
 };
@@ -1329,6 +1380,10 @@ export const revertTournamentPoints = async (
  * liga es derivada (`computeLeagueStandings`), así que se corrige sola en la
  * próxima lectura.
  *
+ * Si el torneo se cobró contra el cupo MENSUAL (plan pago) y se borra dentro
+ * del mismo período en que se creó, ese cupo se devuelve. El cupo del plan
+ * `free` (`tournamentsTotal`) NUNCA se devuelve — ver `releaseTournamentSlot`.
+ *
  * No abre transacción por su cuenta: quien la llame debería envolverla en
  * `withTransaction` y pasarle la sesión.
  */
@@ -1337,6 +1392,10 @@ export const deleteTournamentCascade = async (
   session?: ClientSession
 ): Promise<{ deletedMatches: number }> => {
   await revertTournamentPoints(tournament, session);
+
+  if (tournament.billing?.plan && tournament.billing.plan !== "free") {
+    await releaseTournamentSlot(tournament.createdBy.toString(), tournament.billing.periodKey, session);
+  }
 
   const deleted = await Match.deleteMany({ tournament: tournament._id }, { session });
 

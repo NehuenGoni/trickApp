@@ -21,6 +21,12 @@ import {
   deleteMatch,
   getAdminStats
 } from "../controllers/adminTournament.controller";
+import {
+  listSubscriptions,
+  getUserBillingHistory,
+  grantUserSubscription,
+  updateUserPlan
+} from "../controllers/adminBilling.controller";
 
 const router = express.Router();
 
@@ -49,5 +55,11 @@ router.put("/users/:id", requireSuperAdmin, updateUser);
 router.delete("/users/:id", requireSuperAdmin, deleteUser);
 router.post("/users/:id/password", requireSuperAdmin, resetUserPassword);
 router.post("/users/:id/points", requireSuperAdmin, adjustUserPoints);
+
+// --- Suscripciones: solo superadmin ---
+router.get("/subscriptions", requireSuperAdmin, listSubscriptions);
+router.get("/users/:id/billing", requireSuperAdmin, getUserBillingHistory);
+router.post("/users/:id/subscription", requireSuperAdmin, grantUserSubscription);
+router.put("/users/:id/plan", requireSuperAdmin, updateUserPlan);
 
 export default router;

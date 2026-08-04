@@ -24,6 +24,8 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminTournaments from './pages/admin/AdminTournaments';
 import LiveTournament from './pages/live/LiveTournament';
+import Plans from './pages/billing/Plans';
+import AdminSubscriptions from './pages/admin/AdminSubscriptions';
 
 
 function App(): JSX.Element {
@@ -105,6 +107,9 @@ function App(): JSX.Element {
 
           <Route path="/live/:tournamentId" element={<LiveTournament />} />
 
+          {/* Público a propósito: es la grilla de precios, tiene que verse sin login. */}
+          <Route path="/planes" element={<Plans />} />
+
           <Route path="/admin" element={
             <AdminRoute>
               <AdminDashboard />
@@ -120,6 +125,12 @@ function App(): JSX.Element {
           <Route path="/admin/users" element={
             <AdminRoute superAdminOnly>
               <AdminUsers />
+            </AdminRoute>
+          } />
+
+          <Route path="/admin/subscriptions" element={
+            <AdminRoute superAdminOnly>
+              <AdminSubscriptions />
             </AdminRoute>
           } />
         </Routes>

@@ -21,7 +21,10 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as TokenPayload;
 
-    const user = await User.findById(decoded.userId).select("role passwordChangedAt");
+    // `billing` viaja acá para que el gate de ligas (`hasActiveSubscription`,
+    // en `services/billing.ts`) lo lea directo de `req.authUser` sin una
+    // query aparte: este findById ya se paga en cada request autenticado.
+    const user = await User.findById(decoded.userId).select("role passwordChangedAt billing");
     if (!user) {
       res.status(401).json({ message: "Token inválido" });
       return;
@@ -38,7 +41,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     }
 
     (req as Request & { user: string }).user = decoded.userId;
-    req.authUser = { id: decoded.userId, role: user.role as UserRole };
+    req.authUser = { id: decoded.userId, role: user.role as UserRole, billing: user.billing };
 
     next();
   } catch (err) {

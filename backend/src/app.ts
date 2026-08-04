@@ -6,6 +6,7 @@ import matchRoutes from "./routes/match.routes"
 import leagueRoutes from "./routes/league.routes"
 import userRoutes from "./routes/user.routes";
 import adminRoutes from "./routes/admin.routes";
+import billingRoutes from "./routes/billing.routes";
 
 /**
  * Construcción de la app de Express, separada de `index.ts` (que solo conecta
@@ -36,5 +37,6 @@ app.get("/", (req, res) => {
 app.use("/tournaments", tournamentRoutes);
 app.use("/matches", matchRoutes);
 app.use("/leagues", leagueRoutes);
+app.use("/billing", billingRoutes);
 
 export default app;

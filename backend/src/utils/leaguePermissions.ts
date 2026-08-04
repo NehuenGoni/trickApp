@@ -1,25 +1,27 @@
 import { Request, Response, NextFunction } from "express";
 import { isAdmin } from "../middlewares/roleMiddleware";
-import { UserRole } from "../models/User";
+import { UserRole, IBilling } from "../models/User";
 import { ILeague } from "../models/League";
+import { hasActiveSubscription } from "../services/billing";
 
 interface LeagueActor {
   id: string;
   role: UserRole;
+  billing?: IBilling;
 }
 
 /**
  * PUNTO ÚNICO DE DECISIÓN de quién puede administrar ligas (crear, editar,
  * borrar, agregar/quitar torneos, y setear `league` al crear/editar un torneo).
  *
- * Hoy es provisional: solo admin/superadmin, igual que el resto del panel.
- * El plan es reemplazarlo por un sistema de suscripción todavía no
- * desarrollado. Cuando exista, este archivo es lo ÚNICO que hay que tocar —
- * por eso cada mutación de liga (acá y en tournament.controller.ts /
- * adminTournament.controller.ts) pasa por estas funciones en vez de
- * chequear el rol a mano.
+ * Admin/superadmin siempre puede (panel de soporte). Cualquier otro usuario
+ * necesita una suscripción paga vigente — es el gate principal de todo el
+ * modelo de negocio: sin él, cualquiera crearía ligas gratis. `billing` viaja
+ * en `req.authUser` desde `authMiddleware`, así que esto no dispara ninguna
+ * query extra.
  */
-export const canManageLeagues = (actor?: LeagueActor): boolean => isAdmin(actor?.role);
+export const canManageLeagues = (actor?: LeagueActor): boolean =>
+  isAdmin(actor?.role) || hasActiveSubscription(actor?.billing);
 
 /**
  * Variante por documento: admin/superadmin, o el `createdBy` de la liga.

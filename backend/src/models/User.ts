@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { ROLES } from "../config/constants";
+import { PlanId, PLAN_IDS, periodKeyOf } from "../config/plans";
 
 export type UserRole = typeof ROLES[keyof typeof ROLES];
 
@@ -9,6 +10,27 @@ export interface IPointsAdjustment {
   reason: string;
   adjustedBy?: mongoose.Types.ObjectId;
   adjustedAt: Date;
+}
+
+export type BillingStatus = "none" | "active" | "past_due" | "canceled" | "expired";
+
+export interface IBillingUsage {
+  /** 'YYYY-MM' del período que están contando `tournamentsCreated`. */
+  periodKey: string;
+  /** Torneos creados en `periodKey`. Se resetea al cambiar de mes (perezoso, sin cron). */
+  tournamentsCreated: number;
+  /** Acumulado histórico de TODOS los torneos creados. Nunca se resetea ni decrementa:
+   *  es lo único que impide reciclar el torneo gratis borrándolo y creando otro. */
+  tournamentsTotal: number;
+}
+
+export interface IBilling {
+  plan: PlanId;
+  status: BillingStatus;
+  currentPeriodEnd?: Date | null;
+  usage: IBillingUsage;
+  /** Usuario de antes de que existiera billing: no se le cobra retroactivamente. */
+  grandfathered: boolean;
 }
 
 interface IUser {
@@ -21,6 +43,7 @@ interface IUser {
   passwordResetToken?: string;
   passwordResetExpires?: Date;
   pointsAdjustments: IPointsAdjustment[];
+  billing: IBilling;
   comparePassword(password: string): Promise<boolean>
 }
 
@@ -29,6 +52,24 @@ const pointsAdjustmentSchema = new mongoose.Schema<IPointsAdjustment>({
   reason: { type: String, required: true },
   adjustedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   adjustedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const billingUsageSchema = new mongoose.Schema<IBillingUsage>({
+  periodKey: { type: String, default: () => periodKeyOf(new Date()) },
+  tournamentsCreated: { type: Number, default: 0, min: 0 },
+  tournamentsTotal: { type: Number, default: 0, min: 0 }
+}, { _id: false });
+
+const billingSchema = new mongoose.Schema<IBilling>({
+  plan: { type: String, enum: PLAN_IDS, default: "free" },
+  status: {
+    type: String,
+    enum: ["none", "active", "past_due", "canceled", "expired"],
+    default: "none"
+  },
+  currentPeriodEnd: { type: Date, default: null },
+  usage: { type: billingUsageSchema, default: () => ({}) },
+  grandfathered: { type: Boolean, default: false }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema<IUser>({
@@ -47,6 +88,7 @@ const userSchema = new mongoose.Schema<IUser>({
   passwordResetToken: { type: String, select: false, index: true, sparse: true },
   passwordResetExpires: { type: Date, select: false },
   pointsAdjustments: { type: [pointsAdjustmentSchema], default: [] },
+  billing: { type: billingSchema, default: () => ({}) },
 }, { timestamps: true });
 
 userSchema.pre("save", async function (next) {

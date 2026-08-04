@@ -34,6 +34,7 @@ import LeagueStandingsTable from '../../components/LeagueStandingsTable';
 import LeagueTournamentPicker from '../../components/LeagueTournamentPicker';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
+import useBilling from '../../hooks/useBilling';
 import { canManageLeague } from '../../utils/leaguePermissions';
 import { LeagueDetail, LeagueOrganizer, LeagueTournamentSummary } from '../../types/league';
 
@@ -59,6 +60,7 @@ const LeagueDetails = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const { user } = useCurrentUser();
+  const { billing } = useBilling();
 
   const [data, setData] = useState<LeagueDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,6 +185,10 @@ const LeagueDetails = () => {
 
   const { league, tournaments, standings, guestCount } = data;
   const canManage = canManageLeague(user, league);
+  // El medidor de uso es del PLAN DEL DUEÑO, no de quien mira la página: un
+  // organizador tiene su propio billing (o ninguno), que no tiene nada que
+  // ver con el cupo de esta liga. Solo tiene sentido mostrárselo al dueño.
+  const isOwner = !!user && user._id === league.createdBy;
 
   return (
     <Box>
@@ -236,6 +242,53 @@ const LeagueDetails = () => {
               ' Los jugadores invitados (sin cuenta) se agrupan por nombre; si dos invitados figuran por separado, probablemente se anotaron con variantes del nombre.'}
           </Typography>
         </Paper>
+
+        {isOwner && billing && billing.plan !== 'free' && (
+          <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Tu plan: {billing.plan === 'basico' ? 'Básico' : billing.plan === 'club' ? 'Club' : 'Pro'}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Torneos este mes</Typography>
+                <Typography variant="h6">
+                  {billing.usage.tournamentsCreated}
+                  {billing.limits.tournamentsPerMonth !== null && ` de ${billing.limits.tournamentsPerMonth}`}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Jugadores registrados</Typography>
+                <Typography
+                  variant="h6"
+                  color={
+                    billing.limits.maxMembers !== null &&
+                    standings.filter((s) => !s.isGuest).length > billing.limits.maxMembers
+                      ? 'error'
+                      : 'text.primary'
+                  }
+                >
+                  {standings.filter((s) => !s.isGuest).length}
+                  {billing.limits.maxMembers !== null && ` de ${billing.limits.maxMembers}`}
+                </Typography>
+              </Box>
+            </Box>
+            {billing.limits.maxMembers !== null &&
+              standings.filter((s) => !s.isGuest).length > billing.limits.maxMembers && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  Superaste el cupo de jugadores de tu plan. Las inscripciones siguen funcionando igual;
+                  pasate a un plan superior cuando quieras destrabar el resto de los beneficios.{' '}
+                  <Button size="small" onClick={() => navigate('/planes')}>Ver planes</Button>
+                </Alert>
+              )}
+            {!billing.isActive && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                Tu suscripción venció. Podés seguir gestionando tus torneos en curso, pero no crear uno nuevo
+                hasta reactivarla.{' '}
+                <Button size="small" onClick={() => navigate('/planes')}>Ver planes</Button>
+              </Alert>
+            )}
+          </Paper>
+        )}
 
         {canManage && (
           <Paper elevation={3} sx={{ p: 4, mb: 3 }}>

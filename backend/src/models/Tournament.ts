@@ -5,6 +5,7 @@ import {
   TEAM_FORMATION_MODES,
   GUEST_DRAW_MODES
 } from "../config/constants";
+import { PlanId, PLAN_IDS } from "../config/plans";
 
 export type TournamentType = typeof TOURNAMENT_TYPES[keyof typeof TOURNAMENT_TYPES];
 export type TournamentFormat = typeof TOURNAMENT_FORMATS[keyof typeof TOURNAMENT_FORMATS];
@@ -93,6 +94,15 @@ export interface ITournament extends Document {
   logo?: ITournamentLogoMeta | null;
   /** Liga a la que pertenece, si la tiene. Un torneo pertenece a una sola liga. */
   league?: mongoose.Types.ObjectId | null;
+  billing?: ITournamentBillingCharge | null;
+}
+
+/** Bajo qué plan y período se cobró este torneo (ver `services/billing.ts`). */
+export interface ITournamentBillingCharge {
+  plan: PlanId;
+  /** 'YYYY-MM' del período en que se creó, para saber si borrar el torneo todavía puede devolver el cupo. */
+  periodKey: string;
+  chargedAt: Date;
 }
 
 const PlayerSchema = new Schema<IPlayer>({
@@ -133,6 +143,12 @@ const PlayerStatSchema = new Schema<IPlayerStat>({
   isGuest: { type: Boolean, default: false },
   position: { type: Number, required: true, min: 1, max: 8 },
   points: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+const BillingChargeSchema = new Schema<ITournamentBillingCharge>({
+  plan: { type: String, enum: PLAN_IDS, required: true },
+  periodKey: { type: String, required: true },
+  chargedAt: { type: Date, required: true }
 }, { _id: false });
 
 const LogoMetaSchema = new Schema<ITournamentLogoMeta>({
@@ -189,6 +205,12 @@ const tournamentSchema = new Schema<ITournament>(
     // Opcional: la gran mayoría de los torneos no pertenece a ninguna liga.
     // Es la única fuente de verdad del vínculo torneo↔liga (ver models/League.ts).
     league: { type: Schema.Types.ObjectId, ref: "League", default: null },
+    // Bajo qué plan y en qué período mensual se creó (ver services/billing.ts).
+    // `null` en torneos legacy/de admin, que no pasaron por el gate de billing.
+    // Sirve para devolver el cupo mensual si el torneo se borra dentro del
+    // mismo período (`releaseTournamentSlot`) y para auditar sin reconstruir
+    // el estado histórico del usuario.
+    billing: { type: BillingChargeSchema, default: null },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "tournaments", timestamps: true }
