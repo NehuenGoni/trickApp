@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SLOT_TO_POSITION = exports.POINTS_TABLE = exports.MAX_SCORE = exports.TOURNAMENT_TEAMS_COUNT = exports.FORMAT_TEAM_SIZE = exports.TEAM_FORMATION_MODES = exports.TOURNAMENT_FORMATS = exports.TOURNAMENT_TYPES = exports.BRACKET_SLOTS = exports.MATCH_PHASES = exports.MATCH_STATUS = exports.MATCH_TYPES = exports.PASSWORD_RESET_TTL_MINUTES = exports.MIN_PASSWORD_LENGTH = exports.ADMIN_ROLES = exports.ROLES = exports.FRIENDLY_MATCHES_ID = void 0;
+exports.SLOT_TO_POSITION = exports.POINTS_TABLE = exports.ALLOWED_LOGO_MIME_TYPES = exports.MAX_LOGO_DIMENSION = exports.MAX_LOGO_BYTES = exports.MAX_SCORE = exports.TOURNAMENT_TEAMS_COUNT = exports.FORMAT_TEAM_SIZE = exports.GUEST_DRAW_MODES = exports.POOL_BASED_FORMATION_MODES = exports.TEAM_FORMATION_MODES = exports.TOURNAMENT_FORMATS = exports.TOURNAMENT_TYPES = exports.BRACKET_SLOTS = exports.MATCH_PHASES = exports.MATCH_STATUS = exports.MATCH_TYPES = exports.PASSWORD_RESET_TTL_MINUTES = exports.MIN_PASSWORD_LENGTH = exports.ADMIN_ROLES = exports.ROLES = exports.FRIENDLY_MATCHES_ID = void 0;
 exports.FRIENDLY_MATCHES_ID = 'friendly_matches';
 exports.ROLES = {
     USER: 'user',
@@ -53,7 +53,22 @@ exports.TOURNAMENT_FORMATS = {
 };
 exports.TEAM_FORMATION_MODES = {
     USER_FORMED: 'user-formed',
-    RANDOM: 'random'
+    RANDOM: 'random',
+    CREATOR_FORMED: 'creator-formed'
+};
+/**
+ * Modos en los que la inscripción es individual y `individualSignups` es la
+ * fuente de verdad de quién está en el torneo. Los equipos derivan de ese pool
+ * (sorteados en `random`, armados a mano en `creator-formed`), así que sus
+ * jugadores NO se cuentan aparte al calcular cupos.
+ */
+exports.POOL_BASED_FORMATION_MODES = [
+    exports.TEAM_FORMATION_MODES.RANDOM,
+    exports.TEAM_FORMATION_MODES.CREATOR_FORMED
+];
+exports.GUEST_DRAW_MODES = {
+    GROUPED: 'grouped',
+    MIXED: 'mixed'
 };
 exports.FORMAT_TEAM_SIZE = {
     duos: 2,
@@ -61,6 +76,19 @@ exports.FORMAT_TEAM_SIZE = {
 };
 exports.TOURNAMENT_TEAMS_COUNT = 8;
 exports.MAX_SCORE = 30;
+/**
+ * Límites del logo de torneo.
+ * El cliente redimensiona a 512px WebP antes de subir (~45 KB), así que 300 KB
+ * deja margen de sobra y a la vez corta cualquier intento de subir el original.
+ */
+exports.MAX_LOGO_BYTES = 300 * 1024;
+/** Tope de ancho/alto, validado leyendo el header sin decodificar la imagen. */
+exports.MAX_LOGO_DIMENSION = 1024;
+exports.ALLOWED_LOGO_MIME_TYPES = [
+    'image/webp',
+    'image/png',
+    'image/jpeg'
+];
 exports.POINTS_TABLE = {
     'grand-slam': {
         1: 25,

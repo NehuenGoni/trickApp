@@ -44,7 +44,8 @@ const PlayerSchema = new mongoose_1.Schema({
         }
     },
     name: { type: String, required: false },
-    isGuest: { type: Boolean, default: false }
+    isGuest: { type: Boolean, default: false },
+    signupId: { type: mongoose_1.Schema.Types.ObjectId, required: false }
 });
 const TeamSchema = new mongoose_1.Schema({
     teamId: { type: mongoose_1.Schema.Types.ObjectId, auto: true },
@@ -70,6 +71,11 @@ const PlayerStatSchema = new mongoose_1.Schema({
     position: { type: Number, required: true, min: 1, max: 8 },
     points: { type: Number, required: true, min: 0 }
 }, { _id: false });
+const LogoMetaSchema = new mongoose_1.Schema({
+    version: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true }
+}, { _id: false });
 const tournamentSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
@@ -91,9 +97,16 @@ const tournamentSchema = new mongoose_1.Schema({
         required: true,
         default: constants_1.TEAM_FORMATION_MODES.USER_FORMED
     },
+    guestDrawMode: {
+        type: String,
+        enum: Object.values(constants_1.GUEST_DRAW_MODES),
+        required: true,
+        default: constants_1.GUEST_DRAW_MODES.GROUPED
+    },
     teams: { type: [TeamSchema], default: [] },
     individualSignups: { type: [IndividualSignupSchema], default: [] },
     draftPairOrder: { type: [mongoose_1.Schema.Types.ObjectId], default: undefined },
+    rosterEditedAt: { type: Date, default: undefined },
     startDate: { type: Date, required: true },
     description: { type: String },
     matches: [{ type: mongoose_1.default.Schema.Types.ObjectId, ref: "Match" }],
@@ -104,7 +117,16 @@ const tournamentSchema = new mongoose_1.Schema({
         enum: ['upcoming', 'in_progress', 'completed'],
         default: 'upcoming'
     },
+    // Los torneos creados antes de esta feature simplemente no tienen el campo:
+    // se leen como `null` y el frontend cae al fallback de iniciales.
+    logo: { type: LogoMetaSchema, default: null },
+    // Opcional: la gran mayoría de los torneos no pertenece a ninguna liga.
+    // Es la única fuente de verdad del vínculo torneo↔liga (ver models/League.ts).
+    league: { type: mongoose_1.Schema.Types.ObjectId, ref: "League", default: null },
     createdAt: { type: Date, default: Date.now },
 }, { collection: "tournaments", timestamps: true });
+// Es exactamente la query que arma la tabla de posiciones de una liga
+// (computeLeagueStandings): todos los torneos completados de una liga.
+tournamentSchema.index({ league: 1, status: 1 });
 const TournamentModel = (0, mongoose_1.model)("Tournament", tournamentSchema);
 exports.default = TournamentModel;

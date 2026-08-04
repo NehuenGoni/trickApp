@@ -27,6 +27,7 @@ const updatedAtMs = (doc) => doc.updatedAt ? new Date(doc.updatedAt).getTime() :
  * completo.
  */
 const getTournamentLive = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { id } = req.params;
         if (!OBJECT_ID_RE.test(id)) {
@@ -81,7 +82,11 @@ const getTournamentLive = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 format: tournament.format,
                 status: tournament.status,
                 startDate: tournament.startDate,
-                description: tournament.description
+                description: tournament.description,
+                // Solo metadata: el binario se pide aparte a `/tournaments/:id/logo`.
+                // Cambiar el logo hace `save()` en el torneo, así que mueve `updatedAt`
+                // y con eso la `version` del polling: la proyección lo ve al instante.
+                logo: (_a = tournament.logo) !== null && _a !== void 0 ? _a : null
             },
             teams,
             matches: formattedMatches,

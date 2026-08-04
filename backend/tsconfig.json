@@ -12,7 +12,7 @@
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
   "include": ["src/**/*.ts", "types/**/*.d.ts"],
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules", "src/__tests__"],
   // ts-node solo compila los archivos alcanzables por import, así que sin esto
   // no carga `src/types/express.d.ts` y falla al usar `req.authUser`.
   "ts-node": { "files": true }

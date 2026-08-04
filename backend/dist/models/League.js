@@ -34,26 +34,20 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const UserLeagueStatsSchema = new mongoose_1.Schema({
-    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
-    points: { type: Number, default: 0 },
-    tournamentsPlayed: { type: Number, default: 0 },
-    wins: { type: Number, default: 0 },
-    losses: { type: Number, default: 0 }
-});
+const LeagueLogoMetaSchema = new mongoose_1.Schema({
+    version: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true }
+}, { _id: false });
 const LeagueSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     description: { type: String },
-    tournaments: [{ type: mongoose_1.Schema.Types.ObjectId, ref: "Tournament" }],
-    userStats: [UserLeagueStatsSchema],
     startDate: { type: Date, required: true },
     endDate: { type: Date },
     isActive: { type: Boolean, default: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    logo: { type: LeagueLogoMetaSchema, default: null },
 }, { timestamps: true });
-// Índices para mejorar el rendimiento de las consultas
 LeagueSchema.index({ name: 1 });
-LeagueSchema.index({ "userStats.userId": 1 });
-LeagueSchema.index({ tournaments: 1 });
 const League = mongoose_1.default.model("League", LeagueSchema);
 exports.default = League;

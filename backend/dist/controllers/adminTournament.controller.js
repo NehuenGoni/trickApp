@@ -19,6 +19,7 @@ const Match_1 = __importDefault(require("../models/Match"));
 const User_1 = __importDefault(require("../models/User"));
 const constants_1 = require("../config/constants");
 const tournament_controller_1 = require("./tournament.controller");
+const withTransaction_1 = require("../utils/withTransaction");
 const TOURNAMENT_STATUSES = ["upcoming", "in_progress", "completed"];
 const listTournaments = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -35,9 +36,14 @@ const listTournaments = (req, res) => __awaiter(void 0, void 0, void 0, function
         if (status && TOURNAMENT_STATUSES.includes(status)) {
             filter.status = status;
         }
+        const league = req.query.league;
+        if (league && mongoose_1.default.isValidObjectId(league)) {
+            filter.league = league;
+        }
         const [tournaments, total] = yield Promise.all([
             Tournament_1.default.find(filter)
                 .populate("createdBy", "username email")
+                .populate("league", "name")
                 .sort({ createdAt: -1 })
                 .skip((page - 1) * limit)
                 .limit(limit),
@@ -71,7 +77,14 @@ const updateTournament = (req, res) => __awaiter(void 0, void 0, void 0, functio
         if (!tournament) {
             return void res.status(404).json({ message: "Torneo no encontrado" });
         }
-        const { name, description, startDate, type, format, teamFormationMode } = req.body;
+        const { name, description, startDate, type, format, teamFormationMode, league } = req.body;
+        if (league !== undefined) {
+            const resolved = yield (0, tournament_controller_1.resolveTournamentLeague)(league, req.authUser);
+            if ("error" in resolved) {
+                return void res.status(resolved.status).json({ message: resolved.error });
+            }
+            tournament.league = resolved.league;
+        }
         if (name !== undefined) {
             if (!name.trim()) {
                 return void res.status(400).json({ message: "El nombre no puede estar vacío" });
@@ -165,9 +178,10 @@ const resetTournament = (req, res) => __awaiter(void 0, void 0, void 0, function
         tournament.draftPairOrder = undefined;
         let signupsRestored = 0;
         if (unmakeTeams) {
-            if (tournament.teamFormationMode === constants_1.TEAM_FORMATION_MODES.RANDOM) {
-                // Los equipos sorteados se deshacen y sus jugadores vuelven a la lista
-                // de inscriptos; los equipos cargados a mano se conservan.
+            if (tournament.teamFormationMode !== constants_1.TEAM_FORMATION_MODES.USER_FORMED) {
+                // random y creator-formed: los equipos derivados del pool (isDrawn) se
+                // deshacen y sus jugadores vuelven a la lista de inscriptos; los
+                // equipos cargados enteros a mano (`addGuestTeam`) se conservan.
                 const drawn = tournament.teams.filter((t) => t.isDrawn);
                 const restored = [];
                 for (const team of drawn) {
@@ -264,13 +278,12 @@ const deleteTournament = (req, res) => __awaiter(void 0, void 0, void 0, functio
         if (!tournament) {
             return void res.status(404).json({ message: "Torneo no encontrado" });
         }
-        // Si el torneo ya había repartido puntos, se descuentan antes de borrarlo
-        // para que el ranking global no quede inflado.
-        yield (0, tournament_controller_1.revertTournamentPoints)(tournament);
-        const deleted = yield Match_1.default.deleteMany({ tournament: tournament._id });
-        yield tournament.deleteOne();
+        // La cascada descuenta los puntos ya otorgados. Si el torneo pertenecía a
+        // una liga, esta se corrige sola: su tabla de posiciones es derivada, no
+        // hace falta ningún paso extra acá (ver deleteTournamentCascade).
+        const { deletedMatches } = yield (0, withTransaction_1.withTransaction)((session) => (0, tournament_controller_1.deleteTournamentCascade)(tournament, session));
         res.status(200).json({
-            message: `Torneo "${tournament.name}" eliminado junto con ${deleted.deletedCount} partido(s).`
+            message: `Torneo "${tournament.name}" eliminado junto con ${deletedMatches} partido(s).`
         });
     }
     catch (error) {
@@ -504,7 +517,7 @@ const getAdminStats = (_req, res) => __awaiter(void 0, void 0, void 0, function*
                 .sort({ totalPoints: -1 })
                 .limit(5),
             Tournament_1.default.find()
-                .select("name status startDate createdAt teams individualSignups")
+                .select("name status startDate createdAt teams individualSignups logo")
                 .sort({ createdAt: -1 })
                 .limit(5)
         ]);
