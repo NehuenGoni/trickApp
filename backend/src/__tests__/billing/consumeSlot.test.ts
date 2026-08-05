@@ -232,10 +232,12 @@ describe("grantSubscriptionPeriod", () => {
     });
 
     // El segundo período arranca exactamente donde terminaba el primero, no "ahora".
-    expect(second.currentPeriodStart.getTime()).toBe(first.currentPeriodEnd.getTime());
+    // `grantSubscriptionPeriod` siempre setea ambas fechas (nunca deja una
+    // suscripción manual sin período), así que acá son seguras de afirmar.
+    expect(second.currentPeriodStart!.getTime()).toBe(first.currentPeriodEnd!.getTime());
 
     const user = await User.findById(userId);
-    expect(user!.billing.currentPeriodEnd!.getTime()).toBe(second.currentPeriodEnd.getTime());
+    expect(user!.billing.currentPeriodEnd!.getTime()).toBe(second.currentPeriodEnd!.getTime());
   });
 });
 
@@ -254,7 +256,7 @@ describe("changePlan", () => {
     expect(user!.billing.usage.tournamentsCreated).toBe(2); // no se reseteó
     expect(user!.billing.plan).toBe("club");
 
-    // Con Club (6/mes) ahora le quedan 4, no 6.
+    // Con Club (4/mes) ahora le quedan 2, no 4.
     const next = await consumeTournamentSlot(userId);
     expect(next.ok).toBe(true);
   });

@@ -12,7 +12,13 @@ export type PlanId = 'free' | 'basico' | 'club' | 'pro';
 export interface PlanDefinition {
   id: PlanId;
   label: string;
-  priceUsd: number | null;
+  /** Precio de referencia en USD. El cobro real es en pesos — ver `usePricing`. */
+  priceUsdMonthly: number | null;
+  /**
+   * Precio anual con descuento, en USD. `null` = no hay oferta anual para
+   * este plan; la UI muestra `priceUsdMonthly * 12` sin chip de ahorro.
+   */
+  priceUsdYearly: number | null;
   tournamentsLifetime: number | null;
   tournamentsPerMonth: number | null;
   maxLeagues: number;
@@ -25,7 +31,8 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     id: 'free',
     label: 'Free',
-    priceUsd: null,
+    priceUsdMonthly: null,
+    priceUsdYearly: null,
     tournamentsLifetime: 1,
     tournamentsPerMonth: null,
     maxLeagues: 0,
@@ -35,7 +42,8 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     id: 'basico',
     label: 'Básico',
-    priceUsd: 20,
+    priceUsdMonthly: 20,
+    priceUsdYearly: null,
     tournamentsLifetime: null,
     tournamentsPerMonth: 2,
     maxLeagues: 1,
@@ -45,18 +53,20 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     id: 'club',
     label: 'Club',
-    priceUsd: 30,
+    priceUsdMonthly: 30,
+    priceUsdYearly: 300,
     tournamentsLifetime: null,
-    tournamentsPerMonth: 6,
+    tournamentsPerMonth: 4,
     maxLeagues: 1,
-    maxMembers: 150,
+    maxMembers: 100,
     maxOrganizers: 3,
     highlight: true
   },
   {
     id: 'pro',
     label: 'Pro',
-    priceUsd: 50,
+    priceUsdMonthly: 50,
+    priceUsdYearly: 500,
     tournamentsLifetime: null,
     tournamentsPerMonth: null,
     maxLeagues: 3,
@@ -67,3 +77,36 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
 
 export const planById = (id: PlanId): PlanDefinition =>
   PLAN_DEFINITIONS.find((p) => p.id === id) ?? PLAN_DEFINITIONS[0];
+
+/** Redondea a la centena para no publicar precios como "$43.517". */
+export const arsPrice = (usd: number, usdToArs: number): number =>
+  Math.round((usd * usdToArs) / 100) * 100;
+
+export const formatArs = (value: number): string => `$${value.toLocaleString('es-AR')}`;
+
+/** Mismos límites que `PlanDefinition`, pero sin los ejes de precio. */
+export interface PlanLimits {
+  tournamentsLifetime: number | null;
+  tournamentsPerMonth: number | null;
+  maxLeagues: number;
+  maxMembers: number | null;
+  maxOrganizers: number | null;
+}
+
+/**
+ * Un plan tal como lo devuelve `GET /billing/pricing`: precio y límites ya
+ * resueltos por el backend (fuente de verdad real de cuánto se cobra). A
+ * diferencia de `PLAN_DEFINITIONS` (mirror estático usado en el panel de
+ * admin), esto es lo que `/planes` y "Mi Plan" usan para mostrar precios y
+ * armar el checkout — nunca se calcula un monto en el cliente.
+ */
+export interface PricingPlan {
+  id: PlanId;
+  label: string;
+  priceUsdMonthly: number | null;
+  priceUsdYearly: number | null;
+  priceArsMonthly: number | null;
+  priceArsYearly: number | null;
+  highlight: boolean;
+  limits: PlanLimits;
+}

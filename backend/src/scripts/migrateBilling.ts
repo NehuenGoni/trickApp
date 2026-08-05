@@ -163,7 +163,7 @@ async function run() {
   console.log(apply ? "\nMigración aplicada." : "\nDry-run completado. Nada fue modificado.");
   console.log(
     "\nRecordatorio manual (no lo hace este script): activar plan 'pro' al superadmin y a la cuenta " +
-      "del bar piloto vía POST /admin/users/:id/subscription, para que puedan operar sin límites desde el día uno."
+      "del torneo piloto vía POST /admin/users/:id/subscription, para que puedan operar sin límites desde el día uno."
   );
 }
 

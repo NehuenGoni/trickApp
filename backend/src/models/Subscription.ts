@@ -2,7 +2,14 @@ import mongoose, { Schema, Document } from "mongoose";
 import { PlanId, PLAN_IDS } from "../config/plans";
 
 export type SubscriptionInterval = "monthly" | "quarterly" | "yearly";
-export type SubscriptionStatus = "active" | "past_due" | "canceled" | "expired";
+/**
+ * `pending`: preapproval de MercadoPago creado pero todavía no autorizado por
+ * el pagador (está en el `init_point` eligiendo método de pago). No tiene
+ * `currentPeriodStart`/`currentPeriodEnd` todavía — el webhook los completa
+ * recién cuando MP confirma `authorized`. El resto de los estados siempre
+ * corresponden a una suscripción que llegó a tener al menos un período.
+ */
+export type SubscriptionStatus = "pending" | "active" | "past_due" | "canceled" | "expired";
 export type PaymentProvider = "manual" | "mercadopago";
 
 /**
@@ -11,17 +18,17 @@ export type PaymentProvider = "manual" | "mercadopago";
  * la fuente de verdad histórica — de acá se puede reconstruir el cache si
  * hiciera falta, nunca al revés.
  *
- * `paymentProvider` + `externalId` quedan listos desde ya para el día que se
- * integre MercadoPago (guardarían el `preapproval_id`): activar el webhook no
- * requiere migrar esta colección, solo empezar a poblar esos dos campos.
+ * `paymentProvider` + `externalId` guardan el `preapproval_id` de MercadoPago
+ * para las suscripciones de ese proveedor (ver `services/mercadopago.ts`).
  */
 export interface ISubscription extends Document {
   userId: mongoose.Types.ObjectId;
   plan: PlanId;
   interval: SubscriptionInterval;
   status: SubscriptionStatus;
-  currentPeriodStart: Date;
-  currentPeriodEnd: Date;
+  /** `null` mientras la suscripción está `pending` (preapproval sin autorizar). */
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
   autoRenew: boolean;
   paymentProvider: PaymentProvider;
   externalId?: string | null;
@@ -40,12 +47,12 @@ const subscriptionSchema = new Schema<ISubscription>(
     interval: { type: String, enum: ["monthly", "quarterly", "yearly"], required: true },
     status: {
       type: String,
-      enum: ["active", "past_due", "canceled", "expired"],
+      enum: ["pending", "active", "past_due", "canceled", "expired"],
       required: true,
       default: "active"
     },
-    currentPeriodStart: { type: Date, required: true },
-    currentPeriodEnd: { type: Date, required: true },
+    currentPeriodStart: { type: Date, default: null },
+    currentPeriodEnd: { type: Date, default: null },
     autoRenew: { type: Boolean, default: false },
     paymentProvider: { type: String, enum: ["manual", "mercadopago"], required: true, default: "manual" },
     // OJO: sin `default`, a propósito. Un `default: null` haría que Mongoose

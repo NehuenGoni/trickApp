@@ -38,7 +38,30 @@ import {
 } from '@mui/icons-material';
 import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
-import { PLAN_DEFINITIONS, PlanId } from '../../config/plans';
+import { PLAN_DEFINITIONS, PlanId, planById, arsPrice } from '../../config/plans';
+import usePricing from '../../hooks/usePricing';
+
+const MONTHS_PER_INTERVAL: Record<'monthly' | 'quarterly' | 'yearly', number> = {
+  monthly: 1,
+  quarterly: 3,
+  yearly: 12
+};
+
+/** Monto sugerido en pesos para precargar el campo `amount`: el admin puede pisarlo. */
+const suggestedAmount = (
+  plan: PlanId,
+  interval: 'monthly' | 'quarterly' | 'yearly',
+  usdToArs: number | null
+): string => {
+  if (!usdToArs) return '';
+  const def = planById(plan);
+  if (def.priceUsdMonthly === null) return '';
+  const usd =
+    interval === 'yearly'
+      ? def.priceUsdYearly ?? def.priceUsdMonthly * 12
+      : def.priceUsdMonthly * MONTHS_PER_INTERVAL[interval];
+  return String(arsPrice(usd, usdToArs));
+};
 
 interface SubscriptionUser {
   _id: string;
@@ -86,6 +109,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const AdminSubscriptions = () => {
+  const { usdToArs } = usePricing();
   const [users, setUsers] = useState<SubscriptionUser[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -159,7 +183,24 @@ const AdminSubscriptions = () => {
 
   const openGrantDialog = (target: SubscriptionUser | UserOption) => {
     setGrantTarget(target);
-    setGrantForm({ plan: 'basico', interval: 'monthly', months: '1', amount: '' });
+    setGrantForm({
+      plan: 'basico',
+      interval: 'monthly',
+      months: String(MONTHS_PER_INTERVAL.monthly),
+      amount: suggestedAmount('basico', 'monthly', usdToArs)
+    });
+  };
+
+  /** Al cambiar plan o intervalo, resugiere `months` y `amount` — el admin puede seguir pisándolos a mano. */
+  const updateGrantSelection = (changes: Partial<Pick<typeof grantForm, 'plan' | 'interval'>>) => {
+    setGrantForm((prev) => {
+      const next = { ...prev, ...changes };
+      return {
+        ...next,
+        months: String(MONTHS_PER_INTERVAL[next.interval]),
+        amount: suggestedAmount(next.plan, next.interval, usdToArs)
+      };
+    });
   };
 
   const handleGrant = async () => {
@@ -379,18 +420,21 @@ const AdminSubscriptions = () => {
               select
               label="Plan"
               value={grantForm.plan}
-              onChange={(e) => setGrantForm({ ...grantForm, plan: e.target.value as PlanId })}
+              onChange={(e) => updateGrantSelection({ plan: e.target.value as PlanId })}
               fullWidth
             >
               {PLAN_DEFINITIONS.filter((p) => p.id !== 'free').map((p) => (
-                <MenuItem key={p.id} value={p.id}>{p.label} (USD {p.priceUsd}/mes)</MenuItem>
+                <MenuItem key={p.id} value={p.id}>
+                  {p.label} (USD {p.priceUsdMonthly}/mes
+                  {p.priceUsdYearly ? ` · USD ${p.priceUsdYearly}/año` : ''})
+                </MenuItem>
               ))}
             </TextField>
             <TextField
               select
               label="Intervalo cobrado"
               value={grantForm.interval}
-              onChange={(e) => setGrantForm({ ...grantForm, interval: e.target.value as 'monthly' | 'quarterly' | 'yearly' })}
+              onChange={(e) => updateGrantSelection({ interval: e.target.value as 'monthly' | 'quarterly' | 'yearly' })}
               fullWidth
             >
               <MenuItem value="monthly">Mensual</MenuItem>
@@ -403,14 +447,15 @@ const AdminSubscriptions = () => {
               value={grantForm.months}
               onChange={(e) => setGrantForm({ ...grantForm, months: e.target.value })}
               fullWidth
-              helperText="Ej: 3 para un pago trimestral, 12 para uno anual"
+              helperText="Se sugiere solo según el intervalo — ajustalo para regalar meses sueltos"
             />
             <TextField
-              label="Monto cobrado (opcional, para el registro)"
+              label="Monto cobrado en pesos (opcional, para el registro)"
               type="number"
               value={grantForm.amount}
               onChange={(e) => setGrantForm({ ...grantForm, amount: e.target.value })}
               fullWidth
+              helperText={usdToArs ? 'Sugerido según el tipo de cambio vigente — podés ajustarlo' : undefined}
             />
           </Stack>
         </DialogContent>

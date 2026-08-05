@@ -27,6 +27,7 @@ import {
   grantUserSubscription,
   updateUserPlan
 } from "../controllers/adminBilling.controller";
+import { getAdminPricing, updateAdminPricing } from "../controllers/adminPricing.controller";
 
 const router = express.Router();
 
@@ -61,5 +62,9 @@ router.get("/subscriptions", requireSuperAdmin, listSubscriptions);
 router.get("/users/:id/billing", requireSuperAdmin, getUserBillingHistory);
 router.post("/users/:id/subscription", requireSuperAdmin, grantUserSubscription);
 router.put("/users/:id/plan", requireSuperAdmin, updateUserPlan);
+
+// --- Precios: solo superadmin ---
+router.get("/pricing", requireSuperAdmin, getAdminPricing);
+router.put("/pricing", requireSuperAdmin, updateAdminPricing);
 
 export default router;

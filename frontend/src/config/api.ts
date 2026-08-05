@@ -70,9 +70,14 @@ const API_ROUTES = {
     USER_BILLING: (id: string) => `${API_BASE_URL}/admin/users/${id}/billing`,
     USER_SUBSCRIPTION: (id: string) => `${API_BASE_URL}/admin/users/${id}/subscription`,
     USER_PLAN: (id: string) => `${API_BASE_URL}/admin/users/${id}/plan`,
+    PRICING: `${API_BASE_URL}/admin/pricing`,
   },
   BILLING: {
     ME: `${API_BASE_URL}/billing/me`,
+    PRICING: `${API_BASE_URL}/billing/pricing`,
+    HISTORY: `${API_BASE_URL}/billing/history`,
+    CHECKOUT: `${API_BASE_URL}/billing/checkout`,
+    CANCEL: `${API_BASE_URL}/billing/subscription/cancel`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
@@ -122,6 +127,21 @@ export class PaymentRequiredError extends Error {
     this.reason = data.reason;
     this.plan = data.plan;
     this.usage = data.usage;
+  }
+}
+
+/**
+ * `POST /billing/checkout` responde así (409, `fallback: 'manual'`) cuando
+ * MercadoPago no está configurado en el backend. Permite que la UI caiga al
+ * diálogo de contacto manual en vez de mostrar un error genérico.
+ */
+export class CheckoutUnavailableError extends Error {
+  fallback: string;
+
+  constructor(message: string, fallback: string) {
+    super(message);
+    this.name = 'CheckoutUnavailableError';
+    this.fallback = fallback;
   }
 }
 
@@ -185,6 +205,10 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
           plan: parsedData?.plan,
           usage: parsedData?.usage
         });
+      }
+
+      if (parsedData?.fallback) {
+        throw new CheckoutUnavailableError(errorMessage, parsedData.fallback);
       }
 
       throw new Error(errorMessage);

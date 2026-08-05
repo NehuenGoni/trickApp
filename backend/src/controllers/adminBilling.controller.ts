@@ -3,14 +3,14 @@ import mongoose from "mongoose";
 import User from "../models/User";
 import Subscription from "../models/Subscription";
 import Payment from "../models/Payment";
-import { PLAN_IDS, isValidPlanId } from "../config/plans";
+import { PLAN_IDS, isValidPlanId, monthsForInterval, SubscriptionInterval } from "../config/plans";
 import { grantSubscriptionPeriod, changePlan, resolveBilling } from "../services/billing";
 
 interface AuthRequest extends Request {
   user?: string;
 }
 
-const isValidInterval = (value: unknown): value is "monthly" | "quarterly" | "yearly" =>
+const isValidInterval = (value: unknown): value is SubscriptionInterval =>
   value === "monthly" || value === "quarterly" || value === "yearly";
 
 /** Panel de superadmin: quién paga qué, para poder cobrar por transferencia y activar a mano. */
@@ -93,7 +93,7 @@ export const getUserBillingHistory = async (req: Request, res: Response): Promis
 
 /**
  * Activa o extiende N meses de un plan pago para un usuario — el flujo real
- * hoy es: el bar transfiere, y el superadmin viene acá a acreditárselo.
+ * hoy es: el cliente transfiere, y el superadmin viene acá a acreditárselo.
  */
 export const grantUserSubscription = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -116,9 +116,13 @@ export const grantUserSubscription = async (req: AuthRequest, res: Response): Pr
     if (!isValidInterval(interval)) {
       return void res.status(400).json({ message: "Intervalo inválido (monthly | quarterly | yearly)" });
     }
-    if (typeof months !== "number" || !Number.isInteger(months) || months <= 0) {
+    // `months` es opcional: si no viene, se deriva del intervalo (mensual=1,
+    // trimestral=3, anual=12). Si viene explícito se respeta tal cual —
+    // sirve para acreditar meses sueltos de regalo o cortesía.
+    if (months !== undefined && (typeof months !== "number" || !Number.isInteger(months) || months <= 0)) {
       return void res.status(400).json({ message: "`months` debe ser un entero mayor a 0" });
     }
+    const resolvedMonths = months ?? monthsForInterval(interval);
     if (amount !== undefined && (typeof amount !== "number" || amount < 0)) {
       return void res.status(400).json({ message: "`amount` debe ser un número mayor o igual a 0" });
     }
@@ -132,13 +136,13 @@ export const grantUserSubscription = async (req: AuthRequest, res: Response): Pr
       userId: id,
       plan,
       interval,
-      months,
+      months: resolvedMonths,
       activatedBy: req.user!,
       amount: amount ?? 0
     });
 
     res.status(200).json({
-      message: `Suscripción de ${user.username} activada: ${plan} hasta ${subscription.currentPeriodEnd.toLocaleDateString("es-AR")}.`,
+      message: `Suscripción de ${user.username} activada: ${plan} hasta ${subscription.currentPeriodEnd!.toLocaleDateString("es-AR")}.`,
       subscription,
       payment
     });

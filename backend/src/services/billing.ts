@@ -1,8 +1,10 @@
 import { ClientSession } from "mongoose";
 import User, { IBilling } from "../models/User";
-import Subscription, { ISubscription, SubscriptionInterval } from "../models/Subscription";
+import Subscription, { ISubscription, SubscriptionInterval, PaymentProvider } from "../models/Subscription";
+import { PreapprovalStatus } from "./mercadopago";
 import Payment, { IPayment } from "../models/Payment";
-import { PLANS, PlanId, periodKeyOf } from "../config/plans";
+import League from "../models/League";
+import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
 import { withTransaction } from "../utils/withTransaction";
 
 export interface EffectiveBilling {
@@ -243,6 +245,154 @@ export const grantSubscriptionPeriod = async (params: {
 };
 
 /**
+ * Suscripción de MercadoPago vigente o en curso de un usuario (si la hay):
+ * la que el checkout debe cancelar antes de crear una nueva, y la que el
+ * botón "cancelar renovación" del usuario apunta a dar de baja.
+ */
+export const findActiveProviderSubscription = async (userId: string): Promise<ISubscription | null> =>
+  Subscription.findOne({
+    userId,
+    paymentProvider: "mercadopago",
+    status: { $in: ["pending", "active", "past_due"] }
+  }).sort({ createdAt: -1 });
+
+/**
+ * Crea el registro local de una suscripción de MercadoPago ANTES de llamar a
+ * la API de MP: todavía no tiene período ni `externalId` (se completa con
+ * `setSubscriptionExternalId` apenas MP devuelve el `preapproval_id`). Vive
+ * en `pending` hasta que el usuario autorice el pago en el `init_point`.
+ */
+export const createPendingProviderSubscription = async (params: {
+  userId: string;
+  plan: PlanId;
+  interval: SubscriptionInterval;
+}): Promise<ISubscription> =>
+  Subscription.create({
+    userId: params.userId,
+    plan: params.plan,
+    interval: params.interval,
+    status: "pending",
+    autoRenew: false,
+    paymentProvider: "mercadopago"
+  });
+
+export const setSubscriptionExternalId = async (subscriptionId: string, externalId: string): Promise<void> => {
+  await Subscription.updateOne({ _id: subscriptionId }, { $set: { externalId } });
+};
+
+/**
+ * Refleja en la suscripción local el estado del "mandato" de MercadoPago
+ * (`subscription_preapproval` webhook). NO otorga ni extiende acceso — eso
+ * solo pasa cuando se confirma un cobro real (`applyProviderSubscriptionCharge`,
+ * disparado por `subscription_authorized_payment`). Evita que un usuario
+ * quede con el período pagado dos veces si ambos webhooks llegan para el
+ * mismo ciclo.
+ *
+ * `paused`/`cancelled` sí actúan de inmediato sobre `autoRenew`: el acceso
+ * ya pagado sigue corriendo hasta `currentPeriodEnd` (lo expira `resolveBilling`
+ * solo), pero no se va a renovar.
+ */
+export const updateSubscriptionMandateStatus = async (params: {
+  externalId: string;
+  mpStatus: PreapprovalStatus;
+}): Promise<ISubscription | null> => {
+  const subscription = await Subscription.findOne({
+    paymentProvider: "mercadopago",
+    externalId: params.externalId
+  });
+  if (!subscription) return null;
+
+  subscription.externalStatus = params.mpStatus;
+  if (params.mpStatus === "paused" || params.mpStatus === "cancelled") {
+    subscription.autoRenew = false;
+    subscription.canceledAt = subscription.canceledAt ?? new Date();
+  }
+  await subscription.save();
+  return subscription;
+};
+
+/**
+ * Acredita UN cobro confirmado por MercadoPago (`subscription_authorized_payment`
+ * en estado `approved`): apila el período sobre el vencimiento vigente (o lo
+ * arranca ahora si es el primer cobro) y dispara `User.billing` en la misma
+ * transacción — mismo criterio que `grantSubscriptionPeriod`, pero indexado
+ * por `subscriptionId` en vez de `userId` porque acá no hay un admin del otro
+ * lado decidiendo el plan.
+ *
+ * Idempotencia: se chequea ANTES de abrir la transacción si ya existe un
+ * `Payment` con este `externalId` — así un reintento del mismo webhook (MP
+ * reintenta ante cualquier respuesta que no sea 200) no duplica el período.
+ * Si dos entregas llegan en simultáneo, el índice único de `Payment` aborta
+ * la transacción perdedora y el caller decide si reintentar.
+ */
+export const applyProviderSubscriptionCharge = async (params: {
+  subscriptionId: string;
+  amount: number;
+  externalId: string;
+}): Promise<{ subscription: ISubscription; payment: IPayment } | { duplicate: true } | { notFound: true }> => {
+  const { subscriptionId, amount, externalId } = params;
+
+  const alreadyProcessed = await Payment.exists({ paymentProvider: "mercadopago", externalId });
+  if (alreadyProcessed) return { duplicate: true };
+
+  return withTransaction(async (session) => {
+    const subscription = await Subscription.findById(subscriptionId).session(session ?? null);
+    if (!subscription) return { notFound: true };
+
+    const now = new Date();
+    const months = monthsForInterval(subscription.interval);
+    const hasActivePeriod = !!subscription.currentPeriodEnd && subscription.currentPeriodEnd.getTime() > now.getTime();
+    const periodStart = hasActivePeriod ? subscription.currentPeriodEnd! : now;
+    const periodEnd = new Date(periodStart);
+    periodEnd.setUTCMonth(periodEnd.getUTCMonth() + months);
+
+    subscription.status = "active";
+    if (!subscription.currentPeriodStart) subscription.currentPeriodStart = periodStart;
+    subscription.currentPeriodEnd = periodEnd;
+    subscription.autoRenew = true;
+    await subscription.save({ session });
+
+    const [payment] = await Payment.create(
+      [
+        {
+          userId: subscription.userId,
+          subscriptionId: subscription._id,
+          plan: subscription.plan,
+          kind: "subscription_period",
+          amount,
+          currency: "ARS",
+          status: "approved",
+          paymentProvider: "mercadopago",
+          externalId,
+          periodStart,
+          periodEnd
+        }
+      ],
+      { session }
+    );
+
+    await User.updateOne(
+      { _id: subscription.userId },
+      {
+        $set: {
+          "billing.plan": subscription.plan,
+          "billing.status": "active",
+          "billing.currentPeriodEnd": periodEnd
+        }
+      },
+      { session }
+    );
+
+    return { subscription, payment };
+  });
+};
+
+/** Un cobro recurrente rechazado no toca el período pagado, pero marca la cuenta como en mora. */
+export const markSubscriptionPastDue = async (userId: string): Promise<void> => {
+  await User.updateOne({ _id: userId }, { $set: { "billing.status": "past_due" } });
+};
+
+/**
  * Cambia el plan de un usuario SIN tocar el período vigente ni el contador
  * mensual ya usado (si usó 2 de 2 en Básico y sube a Club, le quedan 4: es lo
  * intuitivo y evita el ciclo de abuso upgrade→downgrade→upgrade).
@@ -273,21 +423,50 @@ export interface UsageSummary {
   plan: PlanId;
   status: IBilling["status"];
   isActive: boolean;
+  currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
-  usage: IBilling["usage"];
+  interval: SubscriptionInterval | null;
+  autoRenew: boolean;
+  paymentProvider: PaymentProvider | null;
+  usage: IBilling["usage"] & { leaguesUsed: number };
   limits: (typeof PLANS)[PlanId];
 }
 
+/**
+ * `currentPeriodStart`/`interval`/`autoRenew` no viven en `User.billing`
+ * (ese cache solo guarda lo que el gate necesita: plan, status, vencimiento).
+ * Se completan leyendo la `Subscription` que está "en fuerza" ahora mismo —
+ * la más reciente en `active`/`past_due` — para que el usuario vea desde
+ * cuándo paga y si tiene débito automático activo.
+ */
 export const getUsage = async (userId: string): Promise<UsageSummary> => {
-  const user = await User.findById(userId).select("billing");
+  const [user, subscription, leaguesUsed] = await Promise.all([
+    User.findById(userId).select("billing"),
+    Subscription.findOne({ userId, status: { $in: ["active", "past_due"] } }).sort({ currentPeriodEnd: -1 }),
+    League.countDocuments({ createdBy: userId })
+  ]);
   if (!user) throw new Error("Usuario no encontrado");
   const effective = resolveBilling(user.billing);
   return {
     plan: user.billing.plan,
     status: user.billing.status,
     isActive: effective.isActive,
+    currentPeriodStart: subscription?.currentPeriodStart ?? null,
     currentPeriodEnd: user.billing.currentPeriodEnd ?? null,
-    usage: user.billing.usage,
+    interval: subscription?.interval ?? null,
+    autoRenew: subscription?.autoRenew ?? false,
+    paymentProvider: subscription?.paymentProvider ?? null,
+    // OJO: `user.billing.usage` es un subdocumento de Mongoose — sus campos
+    // viven en el prototipo compilado del schema, no como propiedades PROPIAS
+    // del objeto, así que un `{ ...user.billing.usage }` los pierde todos en
+    // silencio (spread solo copia own enumerable properties). Hay que
+    // nombrarlos explícitamente.
+    usage: {
+      periodKey: user.billing.usage.periodKey,
+      tournamentsCreated: user.billing.usage.tournamentsCreated,
+      tournamentsTotal: user.billing.usage.tournamentsTotal,
+      leaguesUsed
+    },
     limits: PLANS[user.billing.plan]
   };
 };

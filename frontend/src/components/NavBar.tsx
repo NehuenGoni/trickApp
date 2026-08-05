@@ -21,7 +21,8 @@ import {
   Leaderboard as LeagueIcon,
   Dashboard as DashboardIcon,
   AdminPanelSettings as AdminIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  Payments as PaymentsIcon
 } from '@mui/icons-material';
 
 type AppMenuItem = MenuItemWithPath | MenuItemWithAction | MenuItemDivider;
@@ -83,6 +84,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
     { icon: <StatsIcon fontSize="small" />, label: 'Mis Estadísticas', path: '/stats' },
     { icon: <TrophyIcon fontSize="small" />, label: 'Mis Logros', path: '/achievements' },
     { icon: <LeagueIcon fontSize="small" />, label: 'Ligas', path: '/leagues' },
+    { icon: <PaymentsIcon fontSize="small" />, label: 'Mi Plan', path: '/profile?tab=plan' },
     ...(isAdmin
       ? ([
           { divider: true },

@@ -26,6 +26,7 @@ import AdminTournaments from './pages/admin/AdminTournaments';
 import LiveTournament from './pages/live/LiveTournament';
 import Plans from './pages/billing/Plans';
 import AdminSubscriptions from './pages/admin/AdminSubscriptions';
+import AdminPricing from './pages/admin/AdminPricing';
 
 
 function App(): JSX.Element {
@@ -131,6 +132,12 @@ function App(): JSX.Element {
           <Route path="/admin/subscriptions" element={
             <AdminRoute superAdminOnly>
               <AdminSubscriptions />
+            </AdminRoute>
+          } />
+
+          <Route path="/admin/pricing" element={
+            <AdminRoute superAdminOnly>
+              <AdminPricing />
             </AdminRoute>
           } />
         </Routes>
