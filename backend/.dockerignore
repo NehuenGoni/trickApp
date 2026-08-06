@@ -1,0 +1,11 @@
+node_modules
+dist
+tsconfig.tsbuildinfo
+.env
+.env.*
+backups
+src/__tests__
+coverage
+.git
+.github
+*.md
