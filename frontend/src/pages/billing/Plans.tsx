@@ -20,7 +20,8 @@ import {
   Alert,
   ToggleButtonGroup,
   ToggleButton,
-  CircularProgress
+  CircularProgress,
+  TextField
 } from '@mui/material';
 import { Check as CheckIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -67,6 +68,8 @@ const arsPriceFor = (plan: PricingPlan, cycle: BillingCycle): number | null =>
 const usdPriceFor = (plan: PricingPlan, cycle: BillingCycle): number | null =>
   cycle === 'monthly' ? plan.priceUsdMonthly : (plan.priceUsdYearly ?? (plan.priceUsdMonthly !== null ? plan.priceUsdMonthly * 12 : null));
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const Plans = () => {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
@@ -74,10 +77,13 @@ const Plans = () => {
   const { plans, mercadoPagoEnabled, loading: pricingLoading } = usePricing();
   const [cycle, setCycle] = useState<BillingCycle>('monthly');
   const [contactTarget, setContactTarget] = useState<PricingPlan | null>(null);
+  const [emailTarget, setEmailTarget] = useState<PricingPlan | null>(null);
+  const [payerEmail, setPayerEmail] = useState('');
+  const [payerEmailError, setPayerEmailError] = useState('');
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState('');
 
-  const handleChoose = async (plan: PricingPlan) => {
+  const handleChoose = (plan: PricingPlan) => {
     if (!user) {
       navigate('/login');
       return;
@@ -88,12 +94,33 @@ const Plans = () => {
       return;
     }
 
+    // La cuenta de MercadoPago con la que paga puede no ser la misma con la
+    // que se registró en TrickApp — se lo confirmamos antes de redirigir,
+    // porque MP exige que coincida exactamente con la que usa para pagar.
+    setPayerEmailError('');
+    setPayerEmail(user.email ?? '');
+    setEmailTarget(plan);
+  };
+
+  const startCheckout = async () => {
+    if (!emailTarget) return;
+    if (!EMAIL_REGEX.test(payerEmail.trim())) {
+      setPayerEmailError('Ingresá un email válido');
+      return;
+    }
+
+    const plan = emailTarget;
+    setEmailTarget(null);
     setCheckoutError('');
     setCheckingOut(plan.id);
     try {
       const res = await apiRequest(API_ROUTES.BILLING.CHECKOUT, {
         method: 'POST',
-        body: JSON.stringify({ plan: plan.id, interval: cycle === 'monthly' ? 'monthly' : 'yearly' })
+        body: JSON.stringify({
+          plan: plan.id,
+          interval: cycle === 'monthly' ? 'monthly' : 'yearly',
+          payerEmail: payerEmail.trim()
+        })
       });
       clearBillingCache();
       window.location.href = res.initPoint;
@@ -273,6 +300,37 @@ const Plans = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setContactTarget(null)}>Entendido</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!emailTarget} onClose={() => setEmailTarget(null)}>
+        <DialogTitle>¿Con qué cuenta de MercadoPago vas a pagar?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Puede ser distinta a la que usás para entrar a TrickApp. Necesitamos el email exacto de tu cuenta de
+            MercadoPago para armar la suscripción del plan {emailTarget?.label}.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            fullWidth
+            type="email"
+            label="Email de tu cuenta de MercadoPago"
+            value={payerEmail}
+            onChange={(e) => {
+              setPayerEmail(e.target.value);
+              if (payerEmailError) setPayerEmailError('');
+            }}
+            error={!!payerEmailError}
+            helperText={payerEmailError}
+            sx={{ mt: 2 }}
+            onKeyDown={(e) => e.key === 'Enter' && startCheckout()}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEmailTarget(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={startCheckout}>
+            Continuar a MercadoPago
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

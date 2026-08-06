@@ -29,6 +29,7 @@ export interface AuthorizedPayment {
   payment?: { id: number; status: string };
   preapproval_id: string;
   transaction_amount: number;
+  date_created?: string;
 }
 
 /**
@@ -119,6 +120,19 @@ export const updatePreapprovalStatus = async (
 
 export const getAuthorizedPayment = async (id: string | number): Promise<AuthorizedPayment> =>
   request<AuthorizedPayment>(`/authorized_payments/${id}`, { method: "GET" });
+
+/**
+ * Cobros generados para una preapproval. Se usa en la reconciliación al
+ * volver del checkout: si el webhook todavía no llegó, esto permite acreditar
+ * el período igual consultando directamente el estado real en MP.
+ */
+export const searchAuthorizedPayments = async (preapprovalId: string): Promise<AuthorizedPayment[]> => {
+  const result = await request<{ results: AuthorizedPayment[] }>(
+    `/authorized_payments/search?preapproval_id=${encodeURIComponent(preapprovalId)}`,
+    { method: "GET" }
+  );
+  return result.results;
+};
 
 /**
  * Valida la firma `x-signature` de un webhook de MercadoPago. El manifest

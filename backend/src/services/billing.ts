@@ -1,7 +1,7 @@
 import { ClientSession } from "mongoose";
 import User, { IBilling } from "../models/User";
 import Subscription, { ISubscription, SubscriptionInterval, PaymentProvider } from "../models/Subscription";
-import { PreapprovalStatus } from "./mercadopago";
+import { PreapprovalStatus, getPreapproval, searchAuthorizedPayments } from "./mercadopago";
 import Payment, { IPayment } from "../models/Payment";
 import League from "../models/League";
 import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
@@ -390,6 +390,65 @@ export const applyProviderSubscriptionCharge = async (params: {
 /** Un cobro recurrente rechazado no toca el período pagado, pero marca la cuenta como en mora. */
 export const markSubscriptionPastDue = async (userId: string): Promise<void> => {
   await User.updateOne({ _id: userId }, { $set: { "billing.status": "past_due" } });
+};
+
+/**
+ * Reconciliación de respaldo: no hay que depender 100% de que el webhook de
+ * MercadoPago llegue (en sandbox directamente puede no llegar nunca; en
+ * producción también puede demorarse o perderse una entrega puntual). Se
+ * dispara cuando el usuario vuelve del checkout (`?mp=return`) y hace lo
+ * mismo que harían los dos webhooks juntos, pero consultando el estado real
+ * en la API de MP en vez de esperar la notificación.
+ */
+export const reconcileProviderSubscription = async (userId: string): Promise<void> => {
+  const subscription = await findActiveProviderSubscription(userId);
+  if (!subscription?.externalId) return;
+
+  const preapproval = await getPreapproval(subscription.externalId);
+  await updateSubscriptionMandateStatus({ externalId: preapproval.id, mpStatus: preapproval.status });
+
+  if (preapproval.status !== "authorized") return;
+
+  const authorizedPayments = await searchAuthorizedPayments(preapproval.id);
+  const approved = authorizedPayments
+    .filter((p) => p.payment?.status === "approved")
+    .sort((a, b) => new Date(a.date_created ?? 0).getTime() - new Date(b.date_created ?? 0).getTime());
+
+  for (const authorizedPayment of approved) {
+    await applyProviderSubscriptionCharge({
+      subscriptionId: String(subscription._id),
+      amount: authorizedPayment.transaction_amount,
+      externalId: String(authorizedPayment.id)
+    });
+  }
+};
+
+/**
+ * Barrido para el caso que ni el webhook ni la vuelta del usuario cubren: paga
+ * y cierra la pestaña de MercadoPago sin volver a la app. Nadie dispara
+ * `reconcileProviderSubscription` para ese usuario, así que la suscripción
+ * queda `pending` para siempre aunque MP ya haya cobrado.
+ *
+ * Pensado para un disparador externo (cron-job.org, GitHub Actions, etc.)
+ * porque el proceso no corre 24/7 (duerme en el hosting free) — no sirve un
+ * `setInterval` en memoria. El margen de 5 minutos evita pisarle el paso a un
+ * checkout que el usuario todavía está completando.
+ */
+export const reconcileStalePendingSubscriptions = async (
+  olderThanMinutes = 5
+): Promise<{ checked: number; users: string[] }> => {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+  const stale = await Subscription.find({
+    paymentProvider: "mercadopago",
+    status: "pending",
+    createdAt: { $lt: cutoff }
+  }).select("userId");
+
+  const userIds = [...new Set(stale.map((s) => String(s.userId)))];
+  for (const userId of userIds) {
+    await reconcileProviderSubscription(userId);
+  }
+  return { checked: stale.length, users: userIds };
 };
 
 /**

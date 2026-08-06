@@ -7,7 +7,9 @@ import {
   setSubscriptionExternalId,
   updateSubscriptionMandateStatus,
   applyProviderSubscriptionCharge,
-  markSubscriptionPastDue
+  markSubscriptionPastDue,
+  reconcileProviderSubscription,
+  reconcileStalePendingSubscriptions
 } from "../services/billing";
 import { getUsdToArs } from "../services/pricing";
 import User from "../models/User";
@@ -38,6 +40,8 @@ interface AuthRequest extends Request {
 const isValidInterval = (value: unknown): value is SubscriptionInterval =>
   value === "monthly" || value === "quarterly" || value === "yearly";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const INTERVAL_LABEL: Record<SubscriptionInterval, string> = {
   monthly: "mensual",
   quarterly: "trimestral",
@@ -64,6 +68,24 @@ export const getMyBilling = async (req: AuthRequest, res: Response): Promise<voi
     res.status(200).json(serializeUsage(usage));
   } catch (error: any) {
     res.status(500).json({ message: "Error al obtener el estado de tu plan", error: error.message });
+  }
+};
+
+/**
+ * Reconciliación de respaldo: el frontend la llama al volver del checkout de
+ * MercadoPago (`?mp=return`), por si el webhook todavía no llegó (o nunca
+ * llega, como puede pasar en sandbox). Consulta el estado real en MP y
+ * aplica exactamente lo mismo que aplicarían los webhooks.
+ */
+export const syncMySubscription = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (isMercadoPagoEnabled()) {
+      await reconcileProviderSubscription(req.user!);
+    }
+    const usage = await getUsage(req.user!);
+    res.status(200).json(serializeUsage(usage));
+  } catch (error: any) {
+    res.status(500).json({ message: "Error al sincronizar tu suscripción", error: error.message });
   }
 };
 
@@ -117,7 +139,7 @@ export const getMyBillingHistory = async (req: AuthRequest, res: Response): Prom
  */
 export const createCheckout = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { plan, interval } = req.body as { plan?: string; interval?: string };
+    const { plan, interval, payerEmail } = req.body as { plan?: string; interval?: string; payerEmail?: string };
 
     if (!isValidPlanId(plan) || plan === "free") {
       return void res.status(400).json({
@@ -126,6 +148,9 @@ export const createCheckout = async (req: AuthRequest, res: Response): Promise<v
     }
     if (!isValidInterval(interval)) {
       return void res.status(400).json({ message: "Intervalo inválido (monthly | quarterly | yearly)" });
+    }
+    if (payerEmail !== undefined && !EMAIL_REGEX.test(payerEmail)) {
+      return void res.status(400).json({ message: "El email de MercadoPago no es válido" });
     }
     if (!isMercadoPagoEnabled()) {
       return void res.status(409).json({
@@ -165,7 +190,10 @@ export const createCheckout = async (req: AuthRequest, res: Response): Promise<v
       preapproval = await createPreapproval({
         reason: `TrickApp — Plan ${PLAN_CATALOG[plan].label} (${INTERVAL_LABEL[interval]})`,
         externalReference: String(subscription._id),
-        payerEmail: user.email,
+        // El usuario puede confirmar en el checkout un email de MercadoPago
+        // distinto al de su cuenta de TrickApp (ver Plans.tsx) — MP exige que
+        // coincida exactamente con el de la cuenta con la que va a pagar.
+        payerEmail: payerEmail ?? user.email,
         backUrl: `${frontendUrl}/profile?tab=plan&mp=return`,
         frequency: monthsForInterval(interval),
         transactionAmount: amount
@@ -232,6 +260,28 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
     res.status(200).json({ received: true });
   } catch (error: any) {
     res.status(500).json({ message: "Error al procesar el webhook", error: error.message });
+  }
+};
+
+/**
+ * Barrido periódico para suscripciones `pending` que quedaron huérfanas
+ * (el usuario pagó pero nunca volvió a `?mp=return`, y el webhook de MP no
+ * llegó). Pensado para un disparador externo (cron-job.org, GitHub Actions),
+ * no para un usuario logueado — por eso el secreto compartido en vez de JWT.
+ */
+export const reconcilePendingSubscriptionsCron = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || req.header("x-cron-secret") !== secret) {
+      return void res.status(401).json({ message: "No autorizado" });
+    }
+    if (!isMercadoPagoEnabled()) {
+      return void res.status(200).json({ checked: 0, users: [] });
+    }
+    const result = await reconcileStalePendingSubscriptions();
+    res.status(200).json(result);
+  } catch (error: any) {
+    res.status(500).json({ message: "Error al reconciliar suscripciones pendientes", error: error.message });
   }
 };
 

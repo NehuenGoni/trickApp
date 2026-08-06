@@ -59,7 +59,7 @@ const PlanTab = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { billing, loading: billingLoading, error: billingError, refresh } = useBilling();
-  const { history, loading: historyLoading } = useBillingHistory();
+  const { history, loading: historyLoading, refresh: refreshHistory } = useBillingHistory();
   const { plans } = usePricing();
 
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -67,16 +67,27 @@ const PlanTab = () => {
   const [cancelError, setCancelError] = useState('');
   const [confirming, setConfirming] = useState(false);
 
-  // Vuelta desde MercadoPago: el webhook puede tardar unos segundos en
-  // llegar, así que refrescamos una vez y avisamos sin afirmar que ya está activo.
+  // Vuelta desde MercadoPago: no confiamos en que el webhook ya haya llegado
+  // (puede demorar, o directamente no llegar) — pedimos al backend que
+  // reconcilie contra el estado real de MP antes de refrescar.
   useEffect(() => {
-    if (searchParams.get('mp') === 'return') {
+    // MP le agrega sus propios parámetros (p.ej. `preapproval_id`) al final del
+    // `back_url` con un `?` en vez de `&` cuando este ya tenía query string
+    // propio — el valor de `mp` puede terminar siendo "return?preapproval_id=..."
+    // en vez de "return" a secas, por eso `startsWith` en vez de igualdad exacta.
+    if (searchParams.get('mp')?.startsWith('return')) {
       setConfirming(true);
-      refresh().finally(() => {
-        const next = new URLSearchParams(searchParams);
-        next.delete('mp');
-        setSearchParams(next, { replace: true });
-      });
+      apiRequest(API_ROUTES.BILLING.SYNC, { method: 'POST' })
+        .catch(() => {
+          // Si la reconciliación falla igual refrescamos: el webhook puede haber
+          // llegado por su cuenta mientras tanto.
+        })
+        .then(() => Promise.all([refresh(), refreshHistory()]))
+        .finally(() => {
+          const next = new URLSearchParams(searchParams);
+          next.delete('mp');
+          setSearchParams(next, { replace: true });
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

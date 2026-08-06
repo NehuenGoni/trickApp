@@ -78,6 +78,7 @@ const API_ROUTES = {
     HISTORY: `${API_BASE_URL}/billing/history`,
     CHECKOUT: `${API_BASE_URL}/billing/checkout`,
     CANCEL: `${API_BASE_URL}/billing/subscription/cancel`,
+    SYNC: `${API_BASE_URL}/billing/subscription/sync`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
