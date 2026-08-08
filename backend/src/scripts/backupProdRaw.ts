@@ -14,7 +14,7 @@ dotenv.config();
  *
  * Uso: npx ts-node src/scripts/backupProdRaw.ts --confirm-db=trickApp
  */
-const COLLECTIONS = ["users", "tournaments", "matches", "leagues"];
+const COLLECTIONS = ["users", "tournaments", "matches", "leagues", "payments", "subscriptions", "pricingconfigs", "tournamentlogos", "leaguelogos"];
 
 function parseArgs() {
   const args = process.argv.slice(2);
