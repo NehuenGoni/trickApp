@@ -40,6 +40,11 @@ jobs:
         env:
           MONGOMS_VERSION: 7.0.24
 
+      # JWT_SECRET normalmente viene de backend/.env (gitignoreado). Los tests
+      # firman/verifican JWTs de prueba (fixtures.ts) contra el Mongo en
+      # memoria, nunca contra datos reales, así que alcanza con un valor fijo
+      # acá en vez de depender de un secret del repo.
       - run: npm test
         env:
           MONGOMS_VERSION: 7.0.24
+          JWT_SECRET: test-only-secret-ci
