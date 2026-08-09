@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import LogoUploader from '../../components/LogoUploader';
 import API_ROUTES, { apiRequest, PaymentRequiredError, EmailNotVerifiedError } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
@@ -248,8 +249,8 @@ const CreateTournament = () => {
       <Box>
         <NavBar />
         <Container maxWidth="sm" sx={{ mt: 4 }}>
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h5" gutterBottom>
+          <SurfaceCard sx={{ textAlign: 'center' }}>
+            <Typography variant="h5" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
               {outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
@@ -260,7 +261,7 @@ const CreateTournament = () => {
             <Button variant="contained" onClick={() => navigate('/planes')}>
               Ver planes
             </Button>
-          </Paper>
+          </SurfaceCard>
         </Container>
       </Box>
     );
@@ -270,8 +271,8 @@ const CreateTournament = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 3 }}>
-          <Typography variant="h5" component="h1" gutterBottom>
+        <SurfaceCard sx={{ p: 3 }}>
+          <Typography variant="h5" component="h1" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
             Crear nuevo torneo
           </Typography>
 
@@ -358,7 +359,7 @@ const CreateTournament = () => {
                     Tipo de torneo (sistema de puntos)
                   </Typography>
                   <ToggleButtonGroup
-                    color="primary"
+                    color="gold"
                     exclusive
                     value={formData.type}
                     onChange={(_, value) =>
@@ -380,7 +381,7 @@ const CreateTournament = () => {
                     Formato
                   </Typography>
                   <ToggleButtonGroup
-                    color="primary"
+                    color="gold"
                     exclusive
                     value={formData.format}
                     onChange={(_, value) =>
@@ -397,7 +398,7 @@ const CreateTournament = () => {
                     Cómo se forman los equipos
                   </Typography>
                   <ToggleButtonGroup
-                    color="primary"
+                    color="gold"
                     exclusive
                     value={formData.teamFormationMode}
                     onChange={(_, value) =>
@@ -426,7 +427,7 @@ const CreateTournament = () => {
                       Invitados en el sorteo
                     </Typography>
                     <ToggleButtonGroup
-                      color="primary"
+                      color="gold"
                       exclusive
                       value={formData.guestDrawMode}
                       onChange={(_, value) =>
@@ -529,7 +530,7 @@ const CreateTournament = () => {
               )}
             </Box>
           </form>
-        </Paper>
+        </SurfaceCard>
       </Container>
     </Box>
   );

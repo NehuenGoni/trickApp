@@ -25,6 +25,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import TournamentLogo from '../../components/TournamentLogo';
@@ -171,9 +172,9 @@ const TournamentList = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
+        <SurfaceCard>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h5" component="h1">
+            <Typography variant="h5" component="h1" sx={{ color: '#FFD700', fontWeight: 700 }}>
               Torneos
             </Typography>
             <Button
@@ -319,7 +320,7 @@ const TournamentList = () => {
               ))}
             </List>
           )}
-        </Paper>
+        </SurfaceCard>
 
         <Dialog
           open={deleteDialogOpen}

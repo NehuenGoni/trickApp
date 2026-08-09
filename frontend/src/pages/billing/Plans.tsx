@@ -144,7 +144,7 @@ const Plans = () => {
     <Box>
       <NavBar />
       <Container maxWidth="lg" sx={{ mt: 4, mb: 6 }}>
-        <Typography variant="h4" align="center" gutterBottom>
+        <Typography variant="h4" align="center" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
           Planes
         </Typography>
         <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 3 }}>
@@ -155,6 +155,7 @@ const Plans = () => {
           <ToggleButtonGroup
             size="small"
             exclusive
+            color="gold"
             value={cycle}
             onChange={(_, value) => value && setCycle(value)}
           >
@@ -262,7 +263,7 @@ const Plans = () => {
                       <Button
                         fullWidth
                         variant={isCurrent ? 'outlined' : plan.highlight ? 'contained' : 'outlined'}
-                        color={plan.highlight ? 'secondary' : 'primary'}
+                        color={plan.highlight ? 'secondary' : 'gold'}
                         disabled={isCurrent || checkingOut === plan.id}
                         sx={{ mt: 2 }}
                         onClick={() => (plan.id === 'free' ? navigate('/dashboard') : handleChoose(plan))}

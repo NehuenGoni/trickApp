@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Paper,
   Box,
   Typography,
   TextField,
@@ -15,6 +14,7 @@ import {
   InputAdornment
 } from '@mui/material';
 import AdminLayout from './AdminLayout';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { PLAN_DEFINITIONS, arsPrice, formatArs } from '../../config/plans';
 import { clearPricingCache } from '../../hooks/usePricing';
@@ -71,7 +71,7 @@ const AdminPricing = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 }, mb: 3 }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 }, mb: 3 }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress />
@@ -98,9 +98,9 @@ const AdminPricing = () => {
             )}
           </Box>
         )}
-      </Paper>
+      </SurfaceCard>
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 } }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 } }}>
         <Typography variant="subtitle1" gutterBottom>
           Vista previa
         </Typography>
@@ -138,7 +138,7 @@ const AdminPricing = () => {
             </TableBody>
           </Table>
         </Box>
-      </Paper>
+      </SurfaceCard>
     </AdminLayout>
   );
 };

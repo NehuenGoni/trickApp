@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   Button,
@@ -13,6 +12,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import LogoUploader from '../../components/LogoUploader';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { LeagueDetail, LeagueFormValues } from '../../types/league';
@@ -137,8 +137,8 @@ const LeagueForm = () => {
     <Box>
       <NavBar />
       <Container maxWidth="sm" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 3 }}>
-          <Typography variant="h5" component="h1" gutterBottom>
+        <SurfaceCard sx={{ p: 3 }}>
+          <Typography variant="h5" component="h1" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
             {isEditMode ? 'Editar liga' : 'Crear nueva liga'}
           </Typography>
 
@@ -225,7 +225,7 @@ const LeagueForm = () => {
               </Button>
             </Box>
           </form>
-        </Paper>
+        </SurfaceCard>
       </Container>
     </Box>
   );

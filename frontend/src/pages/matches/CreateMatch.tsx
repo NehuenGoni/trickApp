@@ -32,6 +32,7 @@ import { Types } from 'mongoose';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import SurfaceCard from '../../components/SurfaceCard';
 
 interface User {
   _id: string;
@@ -241,24 +242,7 @@ const CreateMatch = () => {
     <Box>
       <NavBar />
       <Container maxWidth="sm" sx={{ mt: 4 }}>
-        <Paper 
-          elevation={6}
-          sx={{ 
-            p: 4, 
-            bgcolor: "background.paper", 
-            border: "1px solid #FFD700", 
-            borderRadius: 3,
-            boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
-          }}
-        >
-          <Typography 
-            variant="h5" 
-            align="center" 
-            sx={{ mb: 2, fontWeight: 700, color: "#FFD700" }}
-          >
-            Crear Nuevo Partido
-          </Typography>
-
+        <SurfaceCard title="Crear Nuevo Partido">
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
           <Box sx={{ mb: 3 }}>
@@ -431,7 +415,7 @@ const CreateMatch = () => {
           >
             {loading ? <CircularProgress size={24} color="inherit" /> : 'Crear Partido'}
           </Button>
-        </Paper>
+        </SurfaceCard>
       </Container>
     </Box>
   );

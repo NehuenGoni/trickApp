@@ -118,7 +118,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
             onClick={handleMenu}
             color="inherit"
           >
-          <Avatar sx={{ width: 32, height: 32 }}>
+          <Avatar sx={{ width: 32, height: 32, border: '1.5px solid #FFD700', bgcolor: 'background.paper', color: '#FFD700', fontSize: '0.8rem', fontWeight: 700 }}>
             {getInitials(username)}
           </Avatar>
           </IconButton>

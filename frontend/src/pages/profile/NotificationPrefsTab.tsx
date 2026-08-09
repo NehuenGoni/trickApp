@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Paper, Typography, FormControlLabel, Switch, Alert, Box, Chip } from '@mui/material';
+import { Typography, FormControlLabel, Switch, Alert, Box, Chip } from '@mui/material';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser, { clearCurrentUserCache, NotificationPrefs } from '../../hooks/useCurrentUser';
+import SurfaceCard from '../../components/SurfaceCard';
 
 const PREF_ITEMS: Array<{ key: keyof NotificationPrefs; label: string; description: string; badge?: string }> = [
   {
@@ -67,8 +68,10 @@ const NotificationPrefsTab = () => {
   if (loading && !current) return null;
 
   return (
-    <Paper elevation={3} sx={{ p: 4, maxWidth: 560, mx: 'auto' }}>
-      <Typography variant="h6" gutterBottom>Notificaciones por email</Typography>
+    <SurfaceCard sx={{ maxWidth: 560, mx: 'auto' }}>
+      <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
+        Notificaciones por email
+      </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Los avisos de seguridad y pagos (verificación de cuenta, cambio de contraseña, cobros) se mandan siempre y no se pueden desactivar acá.
       </Typography>
@@ -83,7 +86,8 @@ const NotificationPrefsTab = () => {
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             py: 1.5,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
             '&:last-of-type': { borderBottom: 'none' }
           }}
         >
@@ -107,7 +111,7 @@ const NotificationPrefsTab = () => {
           />
         </Box>
       ))}
-    </Paper>
+    </SurfaceCard>
   );
 };
 

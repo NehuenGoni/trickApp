@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Paper,
   Box,
   Typography,
   TextField,
@@ -37,6 +36,7 @@ import {
   History as HistoryIcon
 } from '@mui/icons-material';
 import AdminLayout from './AdminLayout';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { PLAN_DEFINITIONS, PlanId, planById, arsPrice } from '../../config/plans';
 import usePricing from '../../hooks/usePricing';
@@ -276,7 +276,7 @@ const AdminSubscriptions = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 }, mb: 3 }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 }, mb: 3 }}>
         <Typography variant="subtitle1" gutterBottom>
           Activar la primera suscripción de alguien
         </Typography>
@@ -302,9 +302,9 @@ const AdminSubscriptions = () => {
             Activar
           </Button>
         </Box>
-      </Paper>
+      </SurfaceCard>
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 } }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 } }}>
         <TextField
           fullWidth
           size="small"
@@ -405,7 +405,7 @@ const AdminSubscriptions = () => {
           labelRowsPerPage="Por página"
           labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count}`}
         />
-      </Paper>
+      </SurfaceCard>
 
       {/* Activar / extender suscripción */}
       <Dialog open={!!grantTarget} onClose={() => setGrantTarget(null)} fullWidth maxWidth="xs">

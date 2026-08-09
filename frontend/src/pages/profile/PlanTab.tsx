@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Paper,
   Box,
   Typography,
   Chip,
@@ -25,6 +24,7 @@ import useBillingHistory from '../../hooks/useBillingHistory';
 import usePricing from '../../hooks/usePricing';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { formatArs } from '../../config/plans';
+import SurfaceCard from '../../components/SurfaceCard';
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Free',
@@ -143,9 +143,9 @@ const PlanTab = () => {
         </Alert>
       )}
 
-      <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+      <SurfaceCard sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-          <Typography variant="h6">Plan {planLabel}</Typography>
+          <Typography variant="h6" sx={{ color: '#FFD700', fontWeight: 700 }}>Plan {planLabel}</Typography>
           <Chip label={statusChip.label} color={statusChip.color} size="small" />
         </Box>
 
@@ -190,10 +190,12 @@ const PlanTab = () => {
             </Button>
           )}
         </Box>
-      </Paper>
+      </SurfaceCard>
 
-      <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Uso de este período</Typography>
+      <SurfaceCard sx={{ mb: 3 }}>
+        <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
+          Uso de este período
+        </Typography>
 
         {billing.plan === 'free' ? (
           <Box>
@@ -255,10 +257,12 @@ const PlanTab = () => {
             </Box>
           </Box>
         )}
-      </Paper>
+      </SurfaceCard>
 
-      <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h6" gutterBottom>Historial de pagos</Typography>
+      <SurfaceCard>
+        <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
+          Historial de pagos
+        </Typography>
         {historyLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
             <CircularProgress size={28} />
@@ -302,7 +306,7 @@ const PlanTab = () => {
             </Table>
           </Box>
         )}
-      </Paper>
+      </SurfaceCard>
 
       <Dialog open={confirmCancel} onClose={() => !canceling && setConfirmCancel(false)}>
         <DialogTitle>Cancelar renovación automática</DialogTitle>

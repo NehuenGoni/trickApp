@@ -535,7 +535,7 @@ const Scoreboard = () => {
           </Button>
         </Box>
 
-        <Typography variant="h4" gutterBottom align="center">
+        <Typography variant="h4" gutterBottom align="center" sx={{ color: '#FFD700', fontWeight: 700 }}>
           Partido {match.status === "finished" ? "Terminado" : "en Curso"}
         </Typography>
 

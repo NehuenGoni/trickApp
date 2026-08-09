@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Paper, Typography, CircularProgress, Box, Link, Alert } from '@mui/material';
+import { Container, Typography, CircularProgress, Box, Link, Alert } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import SurfaceCard from '../../components/SurfaceCard';
 
 type Status = 'checking' | 'success' | 'invalid';
 
@@ -52,21 +53,7 @@ const Unsubscribe = () => {
           bgcolor: 'background.default'
         }}
       >
-        <Paper
-          elevation={6}
-          sx={{
-            p: 4,
-            bgcolor: 'background.paper',
-            border: '1px solid #FFD700',
-            borderRadius: 3,
-            boxShadow: '0px 4px 12px rgba(0,0,0,0.4)',
-            textAlign: 'center'
-          }}
-        >
-          <Typography variant="h5" sx={{ mb: 2, fontWeight: 700, color: '#FFD700' }}>
-            Preferencias de notificación
-          </Typography>
-
+        <SurfaceCard title="Preferencias de notificación" sx={{ textAlign: 'center' }}>
           {status === 'checking' && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
               <CircularProgress color="secondary" />
@@ -85,7 +72,7 @@ const Unsubscribe = () => {
               Ir a TrickApp
             </Link>
           </Box>
-        </Paper>
+        </SurfaceCard>
       </Box>
     </Container>
   );

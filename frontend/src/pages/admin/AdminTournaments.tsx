@@ -33,6 +33,7 @@ import {
   SportsEsports as MatchIcon
 } from '@mui/icons-material';
 import AdminLayout from './AdminLayout';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
@@ -336,7 +337,7 @@ const AdminTournaments = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 } }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 } }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
           <TextField
             fullWidth
@@ -519,7 +520,7 @@ const AdminTournaments = () => {
           labelRowsPerPage="Por página"
           labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count}`}
         />
-      </Paper>
+      </SurfaceCard>
 
       {/* Editar torneo */}
       <Dialog open={!!editTarget} onClose={() => setEditTarget(null)} fullWidth maxWidth="sm">

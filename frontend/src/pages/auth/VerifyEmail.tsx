@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Container,
-  Paper,
-  Typography,
   CircularProgress,
   Box,
   Link,
@@ -12,6 +10,7 @@ import {
 import { useParams } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { clearCurrentUserCache } from '../../hooks/useCurrentUser';
+import SurfaceCard from '../../components/SurfaceCard';
 
 type Status = 'checking' | 'success' | 'invalid';
 
@@ -83,25 +82,7 @@ const VerifyEmail = () => {
           bgcolor: 'background.default'
         }}
       >
-        <Paper
-          elevation={6}
-          sx={{
-            p: 4,
-            bgcolor: 'background.paper',
-            border: '1px solid #FFD700',
-            borderRadius: 3,
-            boxShadow: '0px 4px 12px rgba(0,0,0,0.4)',
-            textAlign: 'center'
-          }}
-        >
-          <Typography
-            variant="h5"
-            align="center"
-            sx={{ mb: 2, fontWeight: 700, color: '#FFD700' }}
-          >
-            Confirmación de cuenta
-          </Typography>
-
+        <SurfaceCard title="Confirmación de cuenta" sx={{ textAlign: 'center' }}>
           {status === 'checking' && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
               <CircularProgress color="secondary" />
@@ -141,7 +122,7 @@ const VerifyEmail = () => {
               Volver al inicio de sesión
             </Link>
           </Box>
-        </Paper>
+        </SurfaceCard>
       </Box>
     </Container>
   );

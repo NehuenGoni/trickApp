@@ -29,6 +29,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import LeagueStandingsTable from '../../components/LeagueStandingsTable';
 import LeagueTournamentPicker from '../../components/LeagueTournamentPicker';
@@ -197,12 +198,12 @@ const LeagueDetails = () => {
         {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
         {info && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setInfo('')}>{info}</Alert>}
 
-        <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
+        <SurfaceCard sx={{ mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, mb: 1 }}>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', minWidth: 0 }}>
               <TournamentLogo tournament={league} size={64} logoUrlBuilder={API_ROUTES.LEAGUES.LOGO} />
               <Box>
-                <Typography variant="h5" component="h1">
+                <Typography variant="h5" component="h1" sx={{ color: '#FFD700', fontWeight: 700 }}>
                   {league.name}
                 </Typography>
                 {league.description && (
@@ -229,10 +230,10 @@ const LeagueDetails = () => {
               )}
             </Box>
           </Box>
-        </Paper>
+        </SurfaceCard>
 
-        <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
+        <SurfaceCard sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
             Tabla de posiciones
           </Typography>
           <LeagueStandingsTable rows={standings} />
@@ -241,11 +242,11 @@ const LeagueDetails = () => {
             {guestCount > 0 &&
               ' Los jugadores invitados (sin cuenta) se agrupan por nombre; si dos invitados figuran por separado, probablemente se anotaron con variantes del nombre.'}
           </Typography>
-        </Paper>
+        </SurfaceCard>
 
         {isOwner && billing && billing.plan !== 'free' && (
-          <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
+          <SurfaceCard sx={{ mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
               Tu plan: {billing.plan === 'basico' ? 'Básico' : billing.plan === 'club' ? 'Club' : 'Pro'}
             </Typography>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
@@ -287,12 +288,12 @@ const LeagueDetails = () => {
                 <Button size="small" onClick={() => navigate('/planes')}>Ver planes</Button>
               </Alert>
             )}
-          </Paper>
+          </SurfaceCard>
         )}
 
         {canManage && (
-          <Paper elevation={3} sx={{ p: 4, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
+          <SurfaceCard sx={{ mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
               Organizadores
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -360,12 +361,12 @@ const LeagueDetails = () => {
                 Agregar
               </Button>
             </Box>
-          </Paper>
+          </SurfaceCard>
         )}
 
-        <Paper elevation={3} sx={{ p: 4 }}>
+        <SurfaceCard>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Torneos de la liga</Typography>
+            <Typography variant="h6" sx={{ color: '#FFD700', fontWeight: 700 }}>Torneos de la liga</Typography>
             {canManage && (
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setPickerOpen(true)}>
@@ -434,7 +435,7 @@ const LeagueDetails = () => {
               ))}
             </List>
           )}
-        </Paper>
+        </SurfaceCard>
 
         {id && (
           <LeagueTournamentPicker

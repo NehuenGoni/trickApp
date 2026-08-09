@@ -31,6 +31,7 @@ import TvIcon from '@mui/icons-material/Tv';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
 import TeamRosterEditor, { RosterTeam, RosterPlayer } from '../../components/TeamRosterEditor';
@@ -811,11 +812,11 @@ const TournamentDetails = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
+        <SurfaceCard>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
               <TournamentLogo tournament={tournament} size={64} />
-              <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+              <Typography variant="h4" gutterBottom sx={{ mb: 0, color: '#FFD700', fontWeight: 700 }}>
                 {tournament.name}
               </Typography>
             </Box>
@@ -1177,7 +1178,7 @@ const TournamentDetails = () => {
               })}
             </>
           )}
-        </Paper>
+        </SurfaceCard>
 
         <Dialog
           open={registerOpen}
