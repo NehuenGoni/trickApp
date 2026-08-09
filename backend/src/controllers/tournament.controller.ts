@@ -32,6 +32,14 @@ import { canManageTournament } from "../utils/tournamentAccess";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { consumeTournamentSlot, releaseTournamentSlot, ConsumeSlotResult } from "../services/billing";
 import { PlanId } from "../config/plans";
+import {
+  notifyTournamentSignup,
+  notifyTournamentStarted,
+  notifyTournamentClosed,
+  resolveUsers,
+  TournamentStartedEntry,
+  TournamentClosedEntry
+} from "../services/notifications";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -605,6 +613,17 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         });
       }
 
+      void notifyTournamentSignup(
+        users.map((u) => ({
+          _id: u._id,
+          email: u.email,
+          username: u.username,
+          notificationPrefs: u.notificationPrefs
+        })),
+        tournament.name,
+        String(tournament._id)
+      );
+
       return void res.status(201).json({ message: "Equipo inscripto", team: newTeam });
     }
 
@@ -651,6 +670,18 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         message: "No se pudo inscribir (cupos llenos, ya inscripto o estado cambió)"
       });
     }
+
+    void notifyTournamentSignup(
+      [{
+        _id: userDoc._id,
+        email: userDoc.email,
+        username: userDoc.username,
+        notificationPrefs: userDoc.notificationPrefs
+      }],
+      tournament.name,
+      String(tournament._id)
+    );
+
     res.status(201).json({ message: "Inscripción registrada" });
   } catch (error) {
     res.status(500).json({ message: "Error al inscribirse al torneo", error });
@@ -844,6 +875,21 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
 
     tournament.individualSignups.push(...newSignups);
     await tournament.save();
+
+    // Los `guestNames` no tienen cuenta ni email: solo se avisa a los `users` reales.
+    if (users.length > 0) {
+      void notifyTournamentSignup(
+        users.map((u) => ({
+          _id: u._id,
+          email: u.email,
+          username: u.username,
+          notificationPrefs: u.notificationPrefs
+        })),
+        tournament.name,
+        String(tournament._id)
+      );
+    }
+
     res.status(201).json({
       message: `${newSignups.length} inscripto(s) agregado(s)`,
       signups: newSignups
@@ -1246,6 +1292,38 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     tournament.status = "in_progress";
     await tournament.save();
 
+    // `pairOrder[0]` y `pairOrder[1]` se enfrentan en QF1, `pairOrder[2]`/`pairOrder[3]`
+    // en QF2, etc. — mismo orden que arma el bracket unas líneas más arriba.
+    interface StartedPlayerInfo {
+      playerId: string;
+      teammates: string[];
+      opponent: string;
+    }
+    const playerInfos: StartedPlayerInfo[] = [];
+    const collectStartedPlayers = (team: ITeam, rival: ITeam) => {
+      for (const player of team.players) {
+        if (!player.playerId) continue; // invitados: sin cuenta, sin email.
+        playerInfos.push({
+          playerId: player.playerId.toString(),
+          teammates: team.players.filter((p) => p !== player).map((p) => p.name),
+          opponent: rival.name
+        });
+      }
+    };
+    for (let qfIndex = 0; qfIndex < 4; qfIndex++) {
+      collectStartedPlayers(pairOrder[qfIndex * 2], pairOrder[qfIndex * 2 + 1]);
+      collectStartedPlayers(pairOrder[qfIndex * 2 + 1], pairOrder[qfIndex * 2]);
+    }
+    if (playerInfos.length > 0) {
+      const recipients = await resolveUsers(playerInfos.map((p) => p.playerId));
+      const byId = new Map(recipients.map((u) => [String(u._id), u]));
+      const startedEntries: TournamentStartedEntry[] = playerInfos.flatMap((info) => {
+        const user = byId.get(info.playerId);
+        return user ? [{ user, teammates: info.teammates, opponent: info.opponent }] : [];
+      });
+      void notifyTournamentStarted(startedEntries, tournament.name, String(tournament._id));
+    }
+
     res.status(200).json({ message: "Torneo iniciado", tournament });
   } catch (error) {
     console.error("Error iniciando torneo:", error);
@@ -1410,6 +1488,28 @@ export const deleteTournamentCascade = async (
   };
 };
 
+/**
+ * Avisa el resultado final a cada jugador registrado de `tournament.playerStats`
+ * (los invitados no tienen cuenta ni email — mismo filtro que `awardTournamentPoints`).
+ * Se usa tanto desde el cierre automático (`closeTournament`) como desde el
+ * cierre forzado por un admin (`forceCloseTournament`), nunca desde
+ * `recalculateTournamentPoints`: ese solo corrige puntos, no vuelve a "cerrar" nada.
+ */
+export const notifyTournamentClosedFromStats = (tournament: ITournament): void => {
+  const registered = tournament.playerStats.filter((s) => !s.isGuest && s.playerId);
+  if (registered.length === 0) return;
+
+  void (async () => {
+    const recipients = await resolveUsers(registered.map((s) => s.playerId!.toString()));
+    const byId = new Map(recipients.map((u) => [String(u._id), u]));
+    const entries: TournamentClosedEntry[] = registered.flatMap((s) => {
+      const user = byId.get(s.playerId!.toString());
+      return user ? [{ user, position: s.position, points: s.points }] : [];
+    });
+    await notifyTournamentClosed(entries, tournament.name, String(tournament._id));
+  })();
+};
+
 export const closeTournament = async (
   tournamentId: mongoose.Types.ObjectId | string
 ): Promise<void> => {
@@ -1423,4 +1523,6 @@ export const closeTournament = async (
 
   await awardTournamentPoints(tournament);
   await tournament.save();
+
+  notifyTournamentClosedFromStats(tournament);
 };

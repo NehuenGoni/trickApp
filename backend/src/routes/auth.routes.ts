@@ -1,4 +1,4 @@
-import express, {Request, Response} from "express";
+import express from "express";
 import {
   registerUser,
   loginUser,
@@ -6,12 +6,12 @@ import {
   updateProfile,
   forgotPassword,
   verifyResetToken,
-  resetPassword
+  resetPassword,
+  verifyEmail,
+  resendVerification,
+  unsubscribe
 } from "../controllers/auth.controller"
 import authMiddleware from "../middlewares/authMiddleware";
-import User from "../models/User";
-import bcrypt from "bcryptjs";
-import { get } from "http";
 
 const router = express.Router();
 
@@ -23,6 +23,13 @@ router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword);
 router.get("/reset-password/:token", verifyResetToken);
 router.post("/reset-password/:token", resetPassword);
+
+// Confirmación de cuenta (pública: el usuario todavía no tiene por qué estar logueado)
+router.post("/verify-email/:token", verifyEmail);
+router.post("/resend-verification", resendVerification);
+
+// Baja de un tipo de notificación desde el link del mail (pública, ver unsubscribeToken.ts)
+router.post("/unsubscribe/:token", unsubscribe);
 
 router.get("/profile", authMiddleware, profileData);
 router.put("/profile", authMiddleware, updateProfile);

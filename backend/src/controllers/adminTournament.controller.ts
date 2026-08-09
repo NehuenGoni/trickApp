@@ -20,7 +20,8 @@ import {
   awardTournamentPoints,
   revertTournamentPoints,
   deleteTournamentCascade,
-  resolveTournamentLeague
+  resolveTournamentLeague,
+  notifyTournamentClosedFromStats
 } from "./tournament.controller";
 import { withTransaction } from "../utils/withTransaction";
 
@@ -275,6 +276,8 @@ export const forceCloseTournament = async (req: Request, res: Response): Promise
     tournament.status = "completed";
     await awardTournamentPoints(tournament);
     await tournament.save();
+
+    notifyTournamentClosedFromStats(tournament);
 
     res.status(200).json({
       message: `Torneo cerrado. Se repartieron puntos a ${

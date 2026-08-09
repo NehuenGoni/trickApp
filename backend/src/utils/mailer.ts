@@ -1,64 +1,58 @@
-import nodemailer, { Transporter } from "nodemailer";
+import { Resend } from "resend";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-interface MailContent {
+export interface MailContent {
   subject: string;
   text: string;
   html?: string;
 }
 
-interface MailPayload extends MailContent {
+export interface MailPayload extends MailContent {
   to: string;
 }
 
-let cachedTransporter: Transporter | null = null;
+let cachedClient: Resend | null = null;
 
 /**
- * El envío de mails es opcional: si no hay credenciales SMTP configuradas la app
- * sigue funcionando y el contenido se escribe en la consola del servidor, para
- * poder probar el flujo de recuperación de contraseña en desarrollo.
+ * El envío de mails es opcional: si no hay una API key de Resend configurada
+ * la app sigue funcionando y el contenido se escribe en la consola del
+ * servidor, para poder probar los flujos en desarrollo sin cuenta de Resend.
  */
-export const isMailConfigured = (): boolean =>
-  Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+export const isMailConfigured = (): boolean => Boolean(process.env.RESEND_API_KEY);
 
-const getTransporter = (): Transporter => {
-  if (cachedTransporter) return cachedTransporter;
-
-  const port = parseInt(process.env.SMTP_PORT || "587", 10);
-
-  cachedTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    // El puerto 465 usa TLS implícito; 587 y 25 usan STARTTLS.
-    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
-  return cachedTransporter;
+const getClient = (): Resend => {
+  if (cachedClient) return cachedClient;
+  cachedClient = new Resend(process.env.RESEND_API_KEY);
+  return cachedClient;
 };
+
+const getFrom = (): string => process.env.MAIL_FROM || "TrickApp <no-reply@trick-app.com>";
+const getReplyTo = (): string | undefined => process.env.MAIL_REPLY_TO || undefined;
 
 export const sendMail = async ({ to, subject, text, html }: MailPayload): Promise<boolean> => {
   if (!isMailConfigured()) {
     console.warn(
-      `[mailer] SMTP no configurado. Mail no enviado a ${to}.\n` +
+      `[mailer] Resend no configurado. Mail no enviado a ${to}.\n` +
       `Asunto: ${subject}\n${text}`
     );
     return false;
   }
 
   try {
-    await getTransporter().sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    const { error } = await getClient().emails.send({
+      from: getFrom(),
+      replyTo: getReplyTo(),
       to,
       subject,
       text,
       html
     });
+    if (error) {
+      console.error(`[mailer] Error enviando mail a ${to}:`, error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error(`[mailer] Error enviando mail a ${to}:`, error);
@@ -66,53 +60,56 @@ export const sendMail = async ({ to, subject, text, html }: MailPayload): Promis
   }
 };
 
-const APP_NAME = "TrickApp";
+const BATCH_CHUNK_SIZE = 100;
 
-export const passwordResetEmail = (username: string, resetUrl: string, ttlMinutes: number): MailContent => ({
-  subject: `${APP_NAME} - Restablecer tu contraseña`,
-  text:
-    `Hola ${username},\n\n` +
-    `Recibimos una solicitud para restablecer la contraseña de tu cuenta.\n` +
-    `Abrí este enlace para elegir una nueva contraseña:\n\n${resetUrl}\n\n` +
-    `El enlace vence en ${ttlMinutes} minutos y solo puede usarse una vez.\n` +
-    `Si no pediste este cambio, podés ignorar este mensaje: tu contraseña actual sigue siendo válida.`,
-  html: `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#1e1e1e;color:#f5f5f5;border-radius:12px">
-      <h2 style="color:#FFD700;margin:0 0 16px">Restablecer tu contraseña</h2>
-      <p style="margin:0 0 12px">Hola <strong>${username}</strong>,</p>
-      <p style="margin:0 0 20px">Recibimos una solicitud para restablecer la contraseña de tu cuenta de ${APP_NAME}.</p>
-      <p style="margin:0 0 24px;text-align:center">
-        <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#FFD700;color:#1e1e1e;text-decoration:none;font-weight:bold;border-radius:8px">
-          Elegir nueva contraseña
-        </a>
-      </p>
-      <p style="margin:0 0 12px;font-size:13px;color:#bdbdbd">
-        El enlace vence en ${ttlMinutes} minutos y solo puede usarse una vez.
-      </p>
-      <p style="margin:0 0 12px;font-size:13px;color:#bdbdbd">
-        Si no pediste este cambio, podés ignorar este mensaje: tu contraseña actual sigue siendo válida.
-      </p>
-      <p style="margin:16px 0 0;font-size:12px;color:#8a8a8a;word-break:break-all">
-        Si el botón no funciona, copiá y pegá esta dirección en tu navegador:<br />${resetUrl}
-      </p>
-    </div>
-  `
-});
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+};
 
-export const passwordChangedEmail = (username: string): MailContent => ({
-  subject: `${APP_NAME} - Tu contraseña fue actualizada`,
-  text:
-    `Hola ${username},\n\n` +
-    `Te confirmamos que la contraseña de tu cuenta fue actualizada y se cerraron las sesiones abiertas.\n` +
-    `Si no fuiste vos, restablecé tu contraseña de inmediato o contactá a un administrador.`,
-  html: `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#1e1e1e;color:#f5f5f5;border-radius:12px">
-      <h2 style="color:#FFD700;margin:0 0 16px">Contraseña actualizada</h2>
-      <p style="margin:0 0 12px">Hola <strong>${username}</strong>,</p>
-      <p style="margin:0 0 12px">La contraseña de tu cuenta fue actualizada y se cerraron las sesiones abiertas.</p>
-      <p style="margin:0;font-size:13px;color:#bdbdbd">
-        Si no fuiste vos, restablecé tu contraseña de inmediato o contactá a un administrador.
-      </p>
-    </div>
-  `
-});
+/**
+ * Envío masivo para fan-outs (torneo iniciado, resultados de partido, cierre
+ * de torneo). Usa el endpoint de batch de Resend (hasta 100 destinatarios por
+ * request) y nunca lanza: un chunk que falla simplemente no suma al total.
+ * Devuelve la cantidad de mails efectivamente enviados.
+ */
+export const sendMailBatch = async (payloads: MailPayload[]): Promise<number> => {
+  if (payloads.length === 0) return 0;
+
+  if (!isMailConfigured()) {
+    console.warn(`[mailer] Resend no configurado. ${payloads.length} mail(es) no enviados.`);
+    return 0;
+  }
+
+  const client = getClient();
+  const from = getFrom();
+  const replyTo = getReplyTo();
+  let sent = 0;
+
+  for (const batch of chunk(payloads, BATCH_CHUNK_SIZE)) {
+    try {
+      const { data, error } = await client.batch.send(
+        batch.map(({ to, subject, text, html }) => ({
+          from,
+          replyTo,
+          to,
+          subject,
+          text,
+          html
+        }))
+      );
+      if (error) {
+        console.error(`[mailer] Error enviando batch de ${batch.length} mail(es):`, error);
+        continue;
+      }
+      sent += data?.data.length ?? batch.length;
+    } catch (error) {
+      console.error(`[mailer] Error enviando batch de ${batch.length} mail(es):`, error);
+    }
+  }
+
+  return sent;
+};

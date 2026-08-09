@@ -9,6 +9,7 @@ import { computeLeagueStandings } from "../utils/leagueStandings";
 import { withTransaction } from "../utils/withTransaction";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { PLANS } from "../config/plans";
+import { notifyOrganizerAdded } from "../services/notifications";
 
 // Campos del torneo que necesita el frontend para listarlo dentro de una liga,
 // sin `playerStats` (eso ya lo resume `computeLeagueStandings`).
@@ -280,7 +281,7 @@ export const addOrganizer = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const user = await User.findById(userId).select("_id");
+    const user = await User.findById(userId).select("_id email username");
     if (!user) {
       res.status(404).json({ message: "Usuario no encontrado" });
       return;
@@ -288,6 +289,13 @@ export const addOrganizer = async (req: Request, res: Response): Promise<void> =
 
     league.organizers.push(new mongoose.Types.ObjectId(userId));
     await league.save();
+
+    void notifyOrganizerAdded(
+      { _id: user._id, email: user.email, username: user.username },
+      league.name,
+      String(league._id)
+    );
+
     res.status(200).json({ message: "Organizador agregado", organizers: league.organizers });
   } catch (error: any) {
     res.status(400).json({ message: "Error al agregar el organizador", error: error.message });

@@ -5,6 +5,7 @@ import Subscription from "../models/Subscription";
 import Payment from "../models/Payment";
 import { PLAN_IDS, isValidPlanId, monthsForInterval, SubscriptionInterval } from "../config/plans";
 import { grantSubscriptionPeriod, changePlan, resolveBilling } from "../services/billing";
+import { notifySubscriptionGranted, notifySubscriptionCanceled } from "../services/notifications";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -127,7 +128,7 @@ export const grantUserSubscription = async (req: AuthRequest, res: Response): Pr
       return void res.status(400).json({ message: "`amount` debe ser un número mayor o igual a 0" });
     }
 
-    const user = await User.findById(id).select("username");
+    const user = await User.findById(id).select("username email");
     if (!user) {
       return void res.status(404).json({ message: "Usuario no encontrado" });
     }
@@ -140,6 +141,12 @@ export const grantUserSubscription = async (req: AuthRequest, res: Response): Pr
       activatedBy: req.user!,
       amount: amount ?? 0
     });
+
+    void notifySubscriptionGranted(
+      { email: user.email, username: user.username },
+      plan,
+      subscription.currentPeriodEnd ?? null
+    );
 
     res.status(200).json({
       message: `Suscripción de ${user.username} activada: ${plan} hasta ${subscription.currentPeriodEnd!.toLocaleDateString("es-AR")}.`,
@@ -164,13 +171,27 @@ export const updateUserPlan = async (req: Request, res: Response): Promise<void>
       return void res.status(400).json({ message: `Plan inválido (${PLAN_IDS.join(" | ")})` });
     }
 
-    const user = await User.findById(id).select("username");
+    const user = await User.findById(id).select("username email billing");
     if (!user) {
       return void res.status(404).json({ message: "Usuario no encontrado" });
     }
+    const previousPlan = user.billing.plan;
 
     await changePlan(id, plan);
     const updated = await User.findById(id).select("billing");
+
+    // Bajar a `free` es una cancelación (avisa distinto); subir/cambiar de plan
+    // pago es una activación. Si ya estaba en `free` y sigue en `free`, no hay
+    // ningún cambio real que notificar.
+    if (plan === "free" && previousPlan !== "free") {
+      void notifySubscriptionCanceled(id, previousPlan, null);
+    } else if (plan !== "free") {
+      void notifySubscriptionGranted(
+        { email: user.email, username: user.username },
+        plan,
+        updated!.billing.currentPeriodEnd ?? null
+      );
+    }
 
     res.status(200).json({
       message: `Plan de ${user.username} actualizado a ${plan}.`,

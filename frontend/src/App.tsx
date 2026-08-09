@@ -7,6 +7,8 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
+import VerifyEmail from './pages/auth/VerifyEmail';
+import Unsubscribe from './pages/auth/Unsubscribe';
 import Dashboard from './pages/dashboard/Dashboard';
 import Profile from './pages/profile/Profile';
 import CreateMatch from './pages/matches/CreateMatch';
@@ -39,6 +41,8 @@ function App(): JSX.Element {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
+          <Route path="/verify-email/:token" element={<VerifyEmail />} />
+          <Route path="/unsubscribe/:token" element={<Unsubscribe />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           
           <Route path="/dashboard" element={

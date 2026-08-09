@@ -21,7 +21,8 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   CircularProgress,
-  TextField
+  TextField,
+  Link
 } from '@mui/material';
 import { Check as CheckIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -30,7 +31,7 @@ import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import usePricing from '../../hooks/usePricing';
 import { PricingPlan, formatArs } from '../../config/plans';
-import API_ROUTES, { apiRequest, CheckoutUnavailableError } from '../../config/api';
+import API_ROUTES, { apiRequest, CheckoutUnavailableError, EmailNotVerifiedError } from '../../config/api';
 
 type BillingCycle = 'monthly' | 'yearly';
 
@@ -127,6 +128,9 @@ const Plans = () => {
     } catch (err) {
       if (err instanceof CheckoutUnavailableError) {
         setContactTarget(plan);
+      } else if (err instanceof EmailNotVerifiedError) {
+        // El CTA de reenvío ya está en el banner de NavBar; acá solo se explica el porqué.
+        setCheckoutError('Confirmá tu email antes de suscribirte a un plan. Te mandamos un enlace al registrarte — podés pedir uno nuevo desde el aviso de arriba.');
       } else {
         setCheckoutError(err instanceof Error ? err.message : 'No pudimos iniciar el pago. Probá de nuevo en un rato.');
       }
@@ -295,7 +299,11 @@ const Plans = () => {
             {contactArs !== null ? `, ${formatArs(contactArs)}` : ''}) en minutos.
           </DialogContentText>
           <Alert severity="info" sx={{ mt: 2 }}>
-            Contactate por el medio habitual (WhatsApp, email) para coordinar la activación.
+            Escribinos a{' '}
+            <Link href="mailto:no-reply@trick-app.com" sx={{ fontWeight: 600 }}>
+              no-reply@trick-app.com
+            </Link>{' '}
+            para coordinar la activación.
           </Alert>
         </DialogContent>
         <DialogActions>

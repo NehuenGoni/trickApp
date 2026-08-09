@@ -5,6 +5,7 @@ interface AuthUser {
   id: string;
   role: UserRole;
   billing?: IBilling;
+  emailVerified: boolean;
 }
 
 declare global {

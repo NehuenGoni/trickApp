@@ -6,6 +6,7 @@ import Payment, { IPayment } from "../models/Payment";
 import League from "../models/League";
 import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
 import { withTransaction } from "../utils/withTransaction";
+import { EXPIRY_REMINDER_WINDOW_DAYS } from "../config/constants";
 
 export interface EffectiveBilling {
   plan: PlanId;
@@ -449,6 +450,73 @@ export const reconcileStalePendingSubscriptions = async (
     await reconcileProviderSubscription(userId);
   }
   return { checked: stale.length, users: userIds };
+};
+
+export interface ExpiryReminderCandidate {
+  userId: string;
+  username: string;
+  email: string;
+  plan: PlanId;
+  currentPeriodEnd: Date;
+}
+
+/**
+ * Usuarios con una suscripción activa que vence dentro de la ventana
+ * `EXPIRY_REMINDER_WINDOW_DAYS` (hoy: entre 3 y 4 días), que todavía no
+ * recibieron el recordatorio PARA ESE vencimiento puntual, y que además NO
+ * tienen débito automático en curso — a quien MP le va a cobrar solo, "tu
+ * plan vence pronto" no es accionable, así que no se le manda.
+ *
+ * La idempotencia no se resuelve con una marca de tiempo y una ventana de
+ * comparación (frágil si el cron corre a horarios irregulares), sino
+ * guardando en `billing.lastExpiryReminderAt` el propio `currentPeriodEnd`
+ * que se avisó: mientras no cambie, no se vuelve a mandar; si la suscripción
+ * se renueva y el vencimiento se mueve, automáticamente vuelve a calificar.
+ */
+export const findUsersNeedingExpiryReminder = async (
+  now: Date = new Date()
+): Promise<ExpiryReminderCandidate[]> => {
+  const from = new Date(now.getTime() + EXPIRY_REMINDER_WINDOW_DAYS.from * 24 * 60 * 60 * 1000);
+  const to = new Date(now.getTime() + EXPIRY_REMINDER_WINDOW_DAYS.to * 24 * 60 * 60 * 1000);
+
+  const users = await User.find({
+    "billing.status": "active",
+    "billing.currentPeriodEnd": { $gte: from, $lt: to },
+    $expr: { $ne: ["$billing.currentPeriodEnd", "$billing.lastExpiryReminderAt"] }
+  }).select("username email billing");
+
+  if (users.length === 0) return [];
+
+  // Segunda query, acotada solo a los candidatos que ya pasaron el filtro de
+  // arriba (nunca a toda la tabla de Subscription): quiénes de ellos tienen
+  // débito automático activo AHORA MISMO, para excluirlos.
+  const autoRenewing = await Subscription.find({
+    userId: { $in: users.map((u) => u._id) },
+    paymentProvider: "mercadopago",
+    status: "active",
+    autoRenew: true
+  }).select("userId");
+  const autoRenewingIds = new Set(autoRenewing.map((s) => String(s.userId)));
+
+  return users
+    .filter((u) => !autoRenewingIds.has(String(u._id)))
+    .map((u) => ({
+      userId: String(u._id),
+      username: u.username,
+      email: u.email,
+      plan: u.billing.plan,
+      currentPeriodEnd: u.billing.currentPeriodEnd!
+    }));
+};
+
+/**
+ * Marca el vencimiento actual como ya avisado. Se llama para TODOS los
+ * candidatos del barrido, incluso si el envío individual falló — igual que
+ * el resto de los avisos informativos del sistema, un fallo de mail no debe
+ * generar reintentos infinitos en cada corrida del cron.
+ */
+export const markExpiryReminderSent = async (userId: string, currentPeriodEnd: Date): Promise<void> => {
+  await User.updateOne({ _id: userId }, { $set: { "billing.lastExpiryReminderAt": currentPeriodEnd } });
 };
 
 /**

@@ -14,6 +14,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
 import { getInitials } from '../utils/text';
 import AppLogo from './AppLogo';
+import EmailVerificationBanner from './EmailVerificationBanner';
 import {
   Person as PersonIcon,
   EmojiEvents as TrophyIcon,
@@ -96,6 +97,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   ];
 
   return (
+    <>
     <AppBar position="static">
       <Toolbar>
         <AppLogo
@@ -165,6 +167,8 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
         </Box>
       </Toolbar>
     </AppBar>
+    <EmailVerificationBanner />
+    </>
   );
 };
 

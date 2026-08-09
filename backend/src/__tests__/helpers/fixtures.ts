@@ -5,7 +5,12 @@ import app from "../../app";
 import User, { UserRole } from "../../models/User";
 import { ROLES } from "../../config/constants";
 
-/** Crea un usuario directo en Mongo (sin pasar por /auth/register) y su JWT. */
+/**
+ * Crea un usuario directo en Mongo (sin pasar por /auth/register) y su JWT.
+ * `emailVerified: true` a propósito: estos fixtures no ejercitan el flujo de
+ * verificación, y sin esto `requireVerifiedEmail` bloquearía con 403 casi
+ * todo lo que crea un torneo o inicia un checkout en el resto de las suites.
+ */
 export const createUserWithToken = async (
   overrides: Partial<{ username: string; email: string; role: UserRole }> = {}
 ): Promise<{ userId: string; token: string }> => {
@@ -14,7 +19,8 @@ export const createUserWithToken = async (
     username: overrides.username ?? `user-${suffix}`,
     email: overrides.email ?? `user-${suffix}@test.local`,
     password: "Password123!",
-    role: overrides.role ?? ROLES.USER
+    role: overrides.role ?? ROLES.USER,
+    emailVerified: true
   });
   const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET!, { expiresIn: "60d" });
   return { userId: (user._id as mongoose.Types.ObjectId).toString(), token };

@@ -16,13 +16,15 @@ import API_ROUTES, { apiRequest } from '../../config/api';
 import NavBar from '../../components/NavBar';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import PlanTab from './PlanTab';
+import NotificationPrefsTab from './NotificationPrefsTab';
 
-type ProfileTab = 'account' | 'plan';
+type ProfileTab = 'account' | 'plan' | 'notifications';
 
 const Profile = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab: ProfileTab = searchParams.get('tab') === 'plan' ? 'plan' : 'account';
+  const rawTab = searchParams.get('tab');
+  const activeTab: ProfileTab = rawTab === 'plan' || rawTab === 'notifications' ? rawTab : 'account';
 
   const handleTabChange = (_: React.SyntheticEvent, value: ProfileTab) => {
     const next = new URLSearchParams(searchParams);
@@ -118,6 +120,7 @@ const Profile = () => {
         <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 3 }} centered>
           <Tab label="Cuenta" value="account" />
           <Tab label="Mi Plan" value="plan" />
+          <Tab label="Notificaciones" value="notifications" />
         </Tabs>
 
         {activeTab === 'account' && (
@@ -191,6 +194,7 @@ const Profile = () => {
         )}
 
         {activeTab === 'plan' && <PlanTab />}
+        {activeTab === 'notifications' && <NotificationPrefsTab />}
       </Container>
     </Box>
   );

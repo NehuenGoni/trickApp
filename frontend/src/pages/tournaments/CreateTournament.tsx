@@ -19,7 +19,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import LogoUploader from '../../components/LogoUploader';
-import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
+import API_ROUTES, { apiRequest, PaymentRequiredError, EmailNotVerifiedError } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import { canManageLeague } from '../../utils/leaguePermissions';
@@ -201,6 +201,11 @@ const CreateTournament = () => {
         // reintentando contra un gate que ya sabe que va a rechazar.
         clearBillingCache();
         navigate('/planes', { state: { message: err.message } });
+        return;
+      }
+      if (err instanceof EmailNotVerifiedError) {
+        // El CTA de reenvío ya está en el banner de NavBar; acá solo se explica el porqué.
+        setError('Confirmá tu email antes de crear un torneo. Podés pedir un enlace nuevo desde el aviso de arriba.');
         return;
       }
       const e = err as { response?: { status?: number }; message?: string };

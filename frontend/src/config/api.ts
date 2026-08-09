@@ -7,6 +7,9 @@ const API_ROUTES = {
     PROFILE: `${API_BASE_URL}/auth/profile`,
     FORGOT_PASSWORD: `${API_BASE_URL}/auth/forgot-password`,
     RESET_PASSWORD: (token: string) => `${API_BASE_URL}/auth/reset-password/${token}`,
+    VERIFY_EMAIL: (token: string) => `${API_BASE_URL}/auth/verify-email/${token}`,
+    RESEND_VERIFICATION: `${API_BASE_URL}/auth/resend-verification`,
+    UNSUBSCRIBE: (token: string) => `${API_BASE_URL}/auth/unsubscribe/${token}`,
   },
   USERS: {
     LIST: `${API_BASE_URL}/users`,
@@ -146,6 +149,19 @@ export class CheckoutUnavailableError extends Error {
   }
 }
 
+/**
+ * `requireVerifiedEmail` (backend) responde así (403, `reason: 'email_not_verified'`)
+ * cuando el usuario intenta crear un torneo o iniciar un checkout sin haber
+ * confirmado su cuenta. Permite que la UI muestre el CTA de reenvío en vez de
+ * un error genérico indistinguible de cualquier otro 403.
+ */
+export class EmailNotVerifiedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmailNotVerifiedError';
+  }
+}
+
 export const apiRequest = async (url: string, options: RequestInit & { params?: Record<string, any> } = {}) => {
   const token = localStorage.getItem('token');
   
@@ -206,6 +222,10 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
           plan: parsedData?.plan,
           usage: parsedData?.usage
         });
+      }
+
+      if (response.status === 403 && parsedData?.reason === 'email_not_verified') {
+        throw new EmailNotVerifiedError(errorMessage);
       }
 
       if (parsedData?.fallback) {

@@ -24,7 +24,8 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     // `billing` viaja acá para que el gate de ligas (`hasActiveSubscription`,
     // en `services/billing.ts`) lo lea directo de `req.authUser` sin una
     // query aparte: este findById ya se paga en cada request autenticado.
-    const user = await User.findById(decoded.userId).select("role passwordChangedAt billing");
+    // `emailVerified` viaja por el mismo motivo, para `requireVerifiedEmail`.
+    const user = await User.findById(decoded.userId).select("role passwordChangedAt billing emailVerified");
     if (!user) {
       res.status(401).json({ message: "Token inválido" });
       return;
@@ -41,7 +42,12 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     }
 
     (req as Request & { user: string }).user = decoded.userId;
-    req.authUser = { id: decoded.userId, role: user.role as UserRole, billing: user.billing };
+    req.authUser = {
+      id: decoded.userId,
+      role: user.role as UserRole,
+      billing: user.billing,
+      emailVerified: user.emailVerified
+    };
 
     next();
   } catch (err) {

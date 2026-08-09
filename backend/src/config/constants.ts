@@ -13,6 +13,15 @@ export const MIN_PASSWORD_LENGTH = 6;
 /** Vigencia del enlace de recuperación de contraseña. */
 export const PASSWORD_RESET_TTL_MINUTES = 60;
 
+/** Vigencia del enlace de confirmación de email. */
+export const EMAIL_VERIFICATION_TTL_HOURS = 48;
+
+/**
+ * Ventana antes del vencimiento de una suscripción en la que se manda el
+ * recordatorio de renovación (ver `POST /billing/cron/reconcile-pending`).
+ */
+export const EXPIRY_REMINDER_WINDOW_DAYS = { from: 3, to: 4 };
+
 export const MATCH_TYPES = {
   FRIENDLY: 'friendly',
   TOURNAMENT: 'tournament'
@@ -33,6 +42,17 @@ export const MATCH_PHASES = {
   THIRD_PLACE: 'third-place',
   SEVENTH_PLACE: 'seventh-place'
 } as const;
+
+/** Nombre en español de cada fase, para mensajes al usuario (ej. mails de resultado de partido). */
+export const MATCH_PHASE_LABELS: Record<typeof MATCH_PHASES[keyof typeof MATCH_PHASES], string> = {
+  [MATCH_PHASES.QUARTER_FINALS]: 'cuartos de final',
+  [MATCH_PHASES.SEMIFINALS_GOLD]: 'semifinales (zona oro)',
+  [MATCH_PHASES.SEMIFINALS]: 'semifinales',
+  [MATCH_PHASES.FINAL_GOLD]: 'la final',
+  [MATCH_PHASES.FINAL]: 'la final',
+  [MATCH_PHASES.THIRD_PLACE]: 'el partido por el 3er puesto',
+  [MATCH_PHASES.SEVENTH_PLACE]: 'el partido por el 7mo puesto'
+};
 
 export const BRACKET_SLOTS = {
   QF1: 'QF1',

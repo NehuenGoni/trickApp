@@ -3,12 +3,22 @@ import API_ROUTES, { apiRequest } from '../config/api';
 
 export type UserRole = 'user' | 'admin' | 'superadmin';
 
+export interface NotificationPrefs {
+  tournamentSignup: boolean;
+  tournamentStart: boolean;
+  tournamentResults: boolean;
+  matchResults: boolean;
+  leagueRoles: boolean;
+}
+
 export interface CurrentUser {
   _id: string;
   username: string;
   email: string;
   role: UserRole;
   totalPoints: number;
+  emailVerified: boolean;
+  notificationPrefs: NotificationPrefs;
 }
 
 // El perfil se pide en varias pantallas (NavBar, guardas de ruta, panel).

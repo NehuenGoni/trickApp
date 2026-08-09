@@ -9,7 +9,9 @@ import {
   applyProviderSubscriptionCharge,
   markSubscriptionPastDue,
   reconcileProviderSubscription,
-  reconcileStalePendingSubscriptions
+  reconcileStalePendingSubscriptions,
+  findUsersNeedingExpiryReminder,
+  markExpiryReminderSent
 } from "../services/billing";
 import { getUsdToArs } from "../services/pricing";
 import User from "../models/User";
@@ -32,6 +34,12 @@ import {
   updatePreapprovalStatus,
   verifyWebhookSignature
 } from "../services/mercadopago";
+import {
+  notifyPaymentApproved,
+  notifyPaymentRejected,
+  notifySubscriptionCanceled,
+  notifyExpiryReminders
+} from "../services/notifications";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -245,13 +253,23 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
       });
       if (subscription) {
         if (authorizedPayment.payment?.status === "approved") {
-          await applyProviderSubscriptionCharge({
+          const result = await applyProviderSubscriptionCharge({
             subscriptionId: String(subscription._id),
             amount: authorizedPayment.transaction_amount,
             externalId: String(authorizedPayment.id)
           });
+          // MP reintenta webhooks: en un reintento `result` es `{ duplicate: true }`
+          // y no hay que volver a avisar un cobro que el usuario ya recibió.
+          if ("subscription" in result) {
+            void notifyPaymentApproved(
+              String(result.subscription.userId),
+              result.subscription.plan,
+              result.subscription.currentPeriodEnd ?? null
+            );
+          }
         } else if (authorizedPayment.payment?.status === "rejected") {
           await markSubscriptionPastDue(String(subscription.userId));
+          void notifyPaymentRejected(String(subscription.userId), subscription.plan);
         }
       }
     }
@@ -264,10 +282,15 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
 };
 
 /**
- * Barrido periódico para suscripciones `pending` que quedaron huérfanas
- * (el usuario pagó pero nunca volvió a `?mp=return`, y el webhook de MP no
- * llegó). Pensado para un disparador externo (cron-job.org, GitHub Actions),
- * no para un usuario logueado — por eso el secreto compartido en vez de JWT.
+ * Barrido periódico. Hace dos cosas independientes en la misma corrida
+ * (mismo disparador externo, no hay scheduler propio — ver el comentario de
+ * `reconcileStalePendingSubscriptions`):
+ *  1. Reconcilia suscripciones `pending` que quedaron huérfanas (el usuario
+ *     pagó pero nunca volvió a `?mp=return`, y el webhook de MP no llegó).
+ *  2. Manda el recordatorio de vencimiento próximo a quien le toque. Esto NO
+ *     depende de MercadoPago: un alta manual (`grantSubscriptionPeriod`)
+ *     también vence y también necesita el aviso.
+ * No para un usuario logueado — por eso el secreto compartido en vez de JWT.
  */
 export const reconcilePendingSubscriptionsCron = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -275,11 +298,16 @@ export const reconcilePendingSubscriptionsCron = async (req: Request, res: Respo
     if (!secret || req.header("x-cron-secret") !== secret) {
       return void res.status(401).json({ message: "No autorizado" });
     }
-    if (!isMercadoPagoEnabled()) {
-      return void res.status(200).json({ checked: 0, users: [] });
-    }
-    const result = await reconcileStalePendingSubscriptions();
-    res.status(200).json(result);
+
+    const result = isMercadoPagoEnabled()
+      ? await reconcileStalePendingSubscriptions()
+      : { checked: 0, users: [] as string[] };
+
+    const candidates = await findUsersNeedingExpiryReminder();
+    const remindersSent = await notifyExpiryReminders(candidates);
+    await Promise.all(candidates.map((c) => markExpiryReminderSent(c.userId, c.currentPeriodEnd)));
+
+    res.status(200).json({ ...result, remindersSent });
   } catch (error: any) {
     res.status(500).json({ message: "Error al reconciliar suscripciones pendientes", error: error.message });
   }
@@ -298,6 +326,8 @@ export const cancelMySubscription = async (req: AuthRequest, res: Response): Pro
 
     await updatePreapprovalStatus(subscription.externalId, "cancelled");
     await updateSubscriptionMandateStatus({ externalId: subscription.externalId, mpStatus: "cancelled" });
+
+    void notifySubscriptionCanceled(req.user!, subscription.plan, subscription.currentPeriodEnd ?? null);
 
     res.status(200).json({
       message: "Cancelaste la renovación automática. Tu plan sigue activo hasta el vencimiento."

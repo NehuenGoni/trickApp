@@ -1,5 +1,6 @@
 import express from "express";
 import authMiddleware from "../middlewares/authMiddleware";
+import requireVerifiedEmail from "../middlewares/requireVerifiedEmail";
 import {
   getMyBilling,
   getPricing,
@@ -15,7 +16,7 @@ const router = express.Router();
 
 router.get("/me", authMiddleware, getMyBilling);
 router.get("/history", authMiddleware, getMyBillingHistory);
-router.post("/checkout", authMiddleware, createCheckout);
+router.post("/checkout", authMiddleware, requireVerifiedEmail, createCheckout);
 router.post("/subscription/cancel", authMiddleware, cancelMySubscription);
 // Respaldo si el webhook de MercadoPago todavía no llegó (o no llega, como en sandbox).
 router.post("/subscription/sync", authMiddleware, syncMySubscription);

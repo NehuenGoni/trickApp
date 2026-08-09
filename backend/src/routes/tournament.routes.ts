@@ -25,11 +25,12 @@ import {
   deleteTournamentLogo
 } from "../controllers/tournamentLogo.controller";
 import authMiddleware from "../middlewares/authMiddleware";
+import requireVerifiedEmail from "../middlewares/requireVerifiedEmail";
 import uploadLogo from "../middlewares/uploadLogo";
 
 const router = express.Router();
 
-router.post("/", authMiddleware, createTournament);
+router.post("/", authMiddleware, requireVerifiedEmail, createTournament);
 router.get("/", getTournaments);
 router.get("/open", getOpenTournaments);
 router.get("/:id", getTournamentById);

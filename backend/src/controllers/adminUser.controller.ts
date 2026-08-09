@@ -5,6 +5,8 @@ import User, { UserRole } from "../models/User";
 import Match from "../models/Match";
 import TournamentModel from "../models/Tournament";
 import { ROLES, MIN_PASSWORD_LENGTH } from "../config/constants";
+import { sendMail } from "../utils/mailer";
+import { passwordChangedEmail } from "../utils/emailTemplates";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -214,6 +216,10 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
       { _id: user._id },
       { $unset: { passwordResetToken: "", passwordResetExpires: "" } }
     );
+
+    // Mismo aviso informativo que el cambio de contraseña por el propio usuario:
+    // si no fue él, que se entere apenas pueda.
+    void sendMail({ to: user.email, ...passwordChangedEmail(user.username) });
 
     res.status(200).json({
       message: `Contraseña de ${user.username} restablecida. Sus sesiones activas se cerraron.`,
