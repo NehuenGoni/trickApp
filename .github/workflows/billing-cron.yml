@@ -1,0 +1,34 @@
+name: Billing cron
+
+# Dispara POST /billing/cron/reconcile-pending, que hace dos cosas: reconcilia
+# las suscripciones que quedaron en `pending` (por si el webhook de MercadoPago
+# nunca llegó) y manda los recordatorios de vencimiento. El endpoint no tiene
+# authMiddleware a propósito — no lo llama un usuario logueado — y se protege
+# con el secreto compartido `x-cron-secret`.
+
+on:
+  schedule:
+    # 13:00 UTC = 10:00 ART. El endpoint manda mails de recordatorio de
+    # vencimiento, así que conviene una hora en la que la gente los lea y no
+    # la madrugada. GitHub puede atrasar los cron hasta ~30min en horas pico;
+    # la tarea es idempotente, así que el atraso no importa.
+    - cron: "7 13 * * *"
+  # Para dispararlo a mano desde la pestaña Actions, sin esperar 24hs.
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      # `-f` pone el job en rojo ante 4xx/5xx: así nos enteramos si el secreto
+      # se desincronizó entre GitHub y Fly, o si la API está caída, en vez de
+      # que la reconciliación deje de correr en silencio. `--max-time` acota el
+      # caso en que Fly acepta la conexión pero no responde.
+      #
+      # El secreto va en un header y NO en la URL: las URLs de `run` quedan en
+      # los logs de Actions, que son visibles para cualquiera con acceso al repo.
+      - name: Reconciliar suscripciones pendientes
+        run: |
+          curl -fsS --max-time 120 \
+            -X POST "https://trickapp-api.fly.dev/billing/cron/reconcile-pending" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
