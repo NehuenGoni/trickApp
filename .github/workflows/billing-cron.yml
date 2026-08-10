@@ -20,15 +20,24 @@ jobs:
   reconcile:
     runs-on: ubuntu-latest
     steps:
-      # `-f` pone el job en rojo ante 4xx/5xx: así nos enteramos si el secreto
-      # se desincronizó entre GitHub y Fly, o si la API está caída, en vez de
-      # que la reconciliación deje de correr en silencio. `--max-time` acota el
-      # caso en que Fly acepta la conexión pero no responde.
+      # Capturamos el código HTTP y el cuerpo en vez de usar `curl -f`: con -f
+      # el job falla con un exit code genérico y el log no dice QUÉ pasó, que
+      # es justo lo que hace falta cuando el secreto se desincroniza entre
+      # GitHub y Fly (síntoma: 401). El `test` final igual pone el job en rojo
+      # ante cualquier respuesta que no sea 200, para que la reconciliación no
+      # deje de correr en silencio. `--max-time` acota el caso en que Fly
+      # acepta la conexión pero no responde.
       #
-      # El secreto va en un header y NO en la URL: las URLs de `run` quedan en
-      # los logs de Actions, que son visibles para cualquiera con acceso al repo.
+      # El cuerpo se imprime sin riesgo: es el conteo de reconciliaciones
+      # ({"checked":N,"users":[...]}), no contiene secretos. El secreto va en
+      # un header y NO en la URL, porque las URLs de `run` quedan escritas en
+      # los logs de Actions, visibles para cualquiera con acceso al repo.
       - name: Reconciliar suscripciones pendientes
         run: |
-          curl -fsS --max-time 120 \
+          CODE=$(curl -sS --max-time 120 -o /tmp/resp.json -w "%{http_code}" \
             -X POST "https://trickapp-api.fly.dev/billing/cron/reconcile-pending" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $CODE"
+          cat /tmp/resp.json
+          echo ""
+          test "$CODE" = "200"
