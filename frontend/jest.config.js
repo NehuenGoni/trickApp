@@ -14,7 +14,7 @@ module.exports = {
     '^.+\\.(js|jsx)$': 'babel-jest',
   },
   moduleNameMapper: {
-    "^react-router-dom$": "<rootDir>/src/__mocks__/react-router-dom.ts",
+    "^react-router-dom$": "<rootDir>/src/__mocks__/react-router-dom.tsx",
     "\\.(png|jpe?g|svg|webp|gif)$": "<rootDir>/src/__mocks__/fileMock.ts",
   },
 };

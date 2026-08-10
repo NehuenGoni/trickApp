@@ -1,17 +1,53 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-AR">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.png" type="image/png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0D1B2A" />
-    <meta
-      name="description"
-      content="Organizá torneos, ligas y partidos de truco"
-    />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <title>TrickApp</title>
+
+    <title>TrickApp — Organizá torneos de truco en tu club, bar o peña</title>
+    <meta
+      name="description"
+      content="Armá torneos de truco con llave de doble rama, llevá la tabla de tu liga y proyectá todo en la pantalla del local. El primer torneo es gratis."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Open Graph: WhatsApp, Facebook, Telegram, LinkedIn. WhatsApp no
+         ejecuta JavaScript, así que esto tiene que ser HTML estático. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TrickApp" />
+    <meta property="og:locale" content="es_AR" />
+    <meta property="og:url" content="https://trick-app.com/" />
+    <meta property="og:title" content="TrickApp — Organizá torneos de truco en tu club, bar o peña" />
+    <meta
+      property="og:description"
+      content="Llave con doble rama, tabla de liga automática y modo pantalla en vivo para proyectar en el local. El primer torneo es gratis."
+    />
+    <meta property="og:image" content="https://trick-app.com/og/og-trickapp.jpg" />
+    <meta property="og:image:secure_url" content="https://trick-app.com/og/og-trickapp.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="La llave de un torneo de truco de TrickApp proyectada en la pantalla de un bar"
+    />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TrickApp — Organizá torneos de truco en tu club, bar o peña" />
+    <meta
+      name="twitter:description"
+      content="Llave con doble rama, tabla de liga automática y modo pantalla en vivo para proyectar en el local."
+    />
+    <meta name="twitter:image" content="https://trick-app.com/og/og-trickapp.jpg" />
+
+    <!-- La landing no llama al backend hasta la sección de planes, pero
+         adelantar el handshake TLS ahorra tiempo justo ahí. -->
+    <link rel="preconnect" href="https://trickapp-api.fly.dev" crossorigin />
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

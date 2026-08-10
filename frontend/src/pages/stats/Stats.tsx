@@ -151,7 +151,7 @@ const handleOpenDetails = async (match: any) => {
     <Box>
       <NavBar />
       <Box sx={{ p: 3 }}>
-        <Typography variant="h4" gutterBottom sx={{ textAlign: "center", mb: 2 }}>
+        <Typography variant="h4" gutterBottom sx={{ textAlign: "center", mb: 2, color: '#FFD700', fontWeight: 700 }}>
           Mis Estadísticas
         </Typography>
         {loading ? (
@@ -161,23 +161,23 @@ const handleOpenDetails = async (match: any) => {
         ) : (
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={4}>
-              <Paper sx={{ p: 2, textAlign: "center" }}>
-                <Typography variant="h6">Partidos Jugados</Typography>
-                <Typography variant="h4">{matchLength ?? 0}</Typography>
+              <Paper sx={{ p: 2, textAlign: "center", border: '1px solid rgba(255,215,0,0.2)' }}>
+                <Typography variant="h6" color="text.secondary">Partidos Jugados</Typography>
+                <Typography variant="h4" sx={{ color: '#FFD700', fontWeight: 700 }}>{matchLength ?? 0}</Typography>
                 <Button variant="contained" color='success' sx={{ mt: 1 }} onClick={() => isEmpty(matchStats) ? fetchUserStats() : setShowMatches(!showMatches)}>Ver Partidos</Button>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={4}>
-              <Paper sx={{ p: 2, textAlign: "center" }}>
-                <Typography variant="h6">Torneos Jugados</Typography>
-                <Typography variant="h4">{matchStats?.wins ?? 0}</Typography>
+              <Paper sx={{ p: 2, textAlign: "center", border: '1px solid rgba(255,215,0,0.2)' }}>
+                <Typography variant="h6" color="text.secondary">Torneos Jugados</Typography>
+                <Typography variant="h4" sx={{ color: '#FFD700', fontWeight: 700 }}>{matchStats?.wins ?? 0}</Typography>
                 {/* <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setShowTournaments(true)}>Ver Torneos</Button> */}
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={4}>
-              <Paper sx={{ p: 2, textAlign: "center" }}>
-                <Typography variant="h6">Puntos Totales</Typography>
-                <Typography variant="h4">{matchStats?.totalPoints ?? 0}</Typography>
+              <Paper sx={{ p: 2, textAlign: "center", border: '1px solid rgba(255,215,0,0.2)' }}>
+                <Typography variant="h6" color="text.secondary">Puntos Totales</Typography>
+                <Typography variant="h4" sx={{ color: '#FFD700', fontWeight: 700 }}>{matchStats?.totalPoints ?? 0}</Typography>
               </Paper>
             </Grid>
           </Grid>

@@ -10,10 +10,17 @@ interface TournamentLogoProps {
   size?: number;
   variant?: 'rounded' | 'circular' | 'square';
   sx?: SxProps<Theme>;
+  /**
+   * Arma la URL del binario a partir de `(id, version)`. Por defecto apunta al
+   * logo de torneo; se overridea para otras entidades con el mismo esquema de
+   * logo (por ejemplo ligas, vía `API_ROUTES.LEAGUES.LOGO`).
+   */
+  logoUrlBuilder?: (id: string, version: string) => string;
 }
 
 /**
- * Muestra el logo del torneo, o sus iniciales si todavía no tiene uno.
+ * Muestra el logo de la entidad (torneo, liga, etc.), o sus iniciales si
+ * todavía no tiene uno.
  *
  * Los torneos creados antes de esta feature no traen el campo `logo`, así que
  * el fallback no es un caso de error: es el estado normal de buena parte de los
@@ -23,13 +30,12 @@ const TournamentLogo: React.FC<TournamentLogoProps> = ({
   tournament,
   size = 48,
   variant = 'rounded',
-  sx
+  sx,
+  logoUrlBuilder = API_ROUTES.TOURNAMENTS.LOGO
 }) => {
   const version = tournament?.logo?.version;
   const src =
-    tournament?._id && version
-      ? API_ROUTES.TOURNAMENTS.LOGO(tournament._id, version)
-      : undefined;
+    tournament?._id && version ? logoUrlBuilder(tournament._id, version) : undefined;
 
   // Si la imagen falla (borrada desde otra pestaña, red caída), se cae a las
   // iniciales en vez de dejar el ícono roto del browser.

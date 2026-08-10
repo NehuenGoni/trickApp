@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Container,
-  Paper,
   TextField,
   Button,
   Typography,
@@ -11,6 +10,7 @@ import {
   Alert
 } from '@mui/material';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import SurfaceCard from '../../components/SurfaceCard';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -52,24 +52,7 @@ const ForgotPassword = () => {
           bgcolor: 'background.default'
         }}
       >
-        <Paper
-          elevation={6}
-          sx={{
-            p: 4,
-            bgcolor: 'background.paper',
-            border: '1px solid #FFD700',
-            borderRadius: 3,
-            boxShadow: '0px 4px 12px rgba(0,0,0,0.4)'
-          }}
-        >
-          <Typography
-            variant="h5"
-            align="center"
-            sx={{ mb: 1, fontWeight: 700, color: '#FFD700' }}
-          >
-            Recuperar contraseña
-          </Typography>
-
+        <SurfaceCard title="Recuperar contraseña" titleSx={{ mb: 1 }}>
           <Typography variant="body2" align="center" sx={{ mb: 2, color: 'text.secondary' }}>
             Ingresá el email de tu cuenta y te enviamos un enlace para elegir una nueva contraseña.
           </Typography>
@@ -127,7 +110,7 @@ const ForgotPassword = () => {
               Volver al inicio de sesión
             </Link>
           </Box>
-        </Paper>
+        </SurfaceCard>
       </Box>
     </Container>
   );

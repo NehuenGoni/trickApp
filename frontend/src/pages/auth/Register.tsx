@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Container,
-  Paper,
   TextField,
   CircularProgress,
   Button,
@@ -13,6 +12,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import AppLogo from '../../components/AppLogo';
+import SurfaceCard from '../../components/SurfaceCard';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -84,16 +84,7 @@ const Register = () => {
           alignItems: 'center',
         }}
       >
-        <Paper
-          elevation={6}
-          sx={{ 
-            p: 4, 
-            bgcolor: "background.paper", 
-            border: "1px solid #FFD700", 
-            borderRadius: 3,
-            boxShadow: "0px 4px 12px rgba(0,0,0,0.4)"
-          }}
-        >
+        <SurfaceCard>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
             <AppLogo size={72} />
           </Box>
@@ -180,7 +171,7 @@ const Register = () => {
               </Link>
             </Box>
           </Box>
-        </Paper>
+        </SurfaceCard>
       </Box>
     </Container>
   );

@@ -3,7 +3,9 @@ import { Container, Box, Paper, Tabs, Tab, Typography, Chip } from '@mui/materia
 import {
   Insights as InsightsIcon,
   People as PeopleIcon,
-  EmojiEvents as TrophyIcon
+  EmojiEvents as TrophyIcon,
+  Payments as PaymentsIcon,
+  Sell as SellIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
@@ -18,7 +20,9 @@ interface AdminLayoutProps {
 const TABS = [
   { label: 'Resumen', path: '/admin', icon: <InsightsIcon fontSize="small" /> },
   { label: 'Torneos', path: '/admin/tournaments', icon: <TrophyIcon fontSize="small" /> },
-  { label: 'Usuarios', path: '/admin/users', icon: <PeopleIcon fontSize="small" />, superAdminOnly: true }
+  { label: 'Usuarios', path: '/admin/users', icon: <PeopleIcon fontSize="small" />, superAdminOnly: true },
+  { label: 'Suscripciones', path: '/admin/subscriptions', icon: <PaymentsIcon fontSize="small" />, superAdminOnly: true },
+  { label: 'Precios', path: '/admin/pricing', icon: <SellIcon fontSize="small" />, superAdminOnly: true }
 ];
 
 const AdminLayout = ({ title, subtitle, children }: AdminLayoutProps) => {

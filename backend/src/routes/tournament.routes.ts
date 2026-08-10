@@ -7,7 +7,6 @@ import {
   updateTournament,
   deleteTournament,
   createTeamInTournament,
-  updateTeam,
   removeTeam,
   drawTournament,
   startTournament,
@@ -16,7 +15,8 @@ import {
   addGuestTeam,
   getTournamentLeaderboard,
   creatorAddSignup,
-  creatorRemoveSignup
+  creatorRemoveSignup,
+  replaceTournamentRoster
 } from "../controllers/tournament.controller";
 import { getTournamentLive } from "../controllers/live.controller";
 import {
@@ -25,11 +25,12 @@ import {
   deleteTournamentLogo
 } from "../controllers/tournamentLogo.controller";
 import authMiddleware from "../middlewares/authMiddleware";
+import requireVerifiedEmail from "../middlewares/requireVerifiedEmail";
 import uploadLogo from "../middlewares/uploadLogo";
 
 const router = express.Router();
 
-router.post("/", authMiddleware, createTournament);
+router.post("/", authMiddleware, requireVerifiedEmail, createTournament);
 router.get("/", getTournaments);
 router.get("/open", getOpenTournaments);
 router.get("/:id", getTournamentById);
@@ -49,9 +50,9 @@ router.delete("/:id/register", authMiddleware, unregisterFromTournament);
 router.post("/:id/teams/guests", authMiddleware, addGuestTeam);
 router.post("/:id/signups/admin", authMiddleware, creatorAddSignup);
 router.delete("/:id/signups/admin/:signupId", authMiddleware, creatorRemoveSignup);
+router.put("/:id/roster", authMiddleware, replaceTournamentRoster);
 
 router.post("/:tournamentId/teams", authMiddleware, createTeamInTournament);
-router.put("/:tournamentId/teams/:teamId", authMiddleware, updateTeam);
 router.delete("/:tournamentId/teams/:teamId", authMiddleware, removeTeam);
 
 export default router;

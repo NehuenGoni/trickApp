@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   Button,
@@ -16,6 +15,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 
 interface User {
@@ -172,8 +172,8 @@ const CreateTeam = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" component="h1" gutterBottom>
+        <SurfaceCard>
+          <Typography variant="h5" component="h1" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
             Crear Nuevo Equipo
           </Typography>
 
@@ -220,7 +220,7 @@ const CreateTeam = () => {
               )}
             </Box>
           </form>
-        </Paper>
+        </SurfaceCard>
       </Container>
     </Box>
   );

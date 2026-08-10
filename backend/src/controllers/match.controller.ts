@@ -6,9 +6,13 @@ import {
   MATCH_TYPES,
   MATCH_STATUS,
   MAX_SCORE,
-  BRACKET_SLOTS
+  BRACKET_SLOTS,
+  SLOT_TO_POSITION,
+  MATCH_PHASE_LABELS
 } from "../config/constants";
 import { closeTournament } from "./tournament.controller";
+import { canManageTournament } from "../utils/tournamentAccess";
+import { notifyMatchResults, resolveUsers, MatchResultEntry } from "../services/notifications";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -24,18 +28,19 @@ const TERMINAL_SLOTS = new Set<string>([
 // Solo restringe partidos de torneo: en un amistoso el modelo Match no guarda
 // quién lo creó, así que no hay contra qué autorizar (un amistoso entre
 // invitados no tiene ningún playerId). Se deja igual de laxo que hoy.
-// En torneo, puede modificarlo quien juega el partido o quien creó el torneo.
-const canModifyMatch = async (match: IMatch, userId?: string): Promise<boolean> => {
+// En torneo, puede modificarlo quien juega el partido o quien gestiona el
+// torneo (creador, o dueño/organizador de su liga — ver tournamentAccess.ts).
+const canModifyMatch = async (match: IMatch, req: AuthRequest): Promise<boolean> => {
   if (match.type !== MATCH_TYPES.TOURNAMENT) return true;
 
   const isPlayer = match.teams.some((t) =>
-    t.players.some((p) => p.playerId && p.playerId.toString() === userId)
+    t.players.some((p) => p.playerId && p.playerId.toString() === req.user)
   );
   if (isPlayer) return true;
 
   if (!match.tournament) return false;
   const tournament = await Tournament.findById(match.tournament);
-  return !!tournament && tournament.createdBy.toString() === userId;
+  return !!tournament && (await canManageTournament(tournament, req.authUser));
 };
 
 export const createMatch = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -151,6 +156,51 @@ export const getMatchById = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+/** Posición final por bracket slot terminal — mismo dato que usa `awardTournamentPoints` en `tournament.controller.ts`. */
+const FINAL_POSITION_BY_SLOT: Record<string, { winner: number; loser: number }> = {
+  [BRACKET_SLOTS.FG]: { winner: SLOT_TO_POSITION.FG_WINNER, loser: SLOT_TO_POSITION.FG_LOSER },
+  [BRACKET_SLOTS.M34]: { winner: SLOT_TO_POSITION.M34_WINNER, loser: SLOT_TO_POSITION.M34_LOSER },
+  [BRACKET_SLOTS.FS]: { winner: SLOT_TO_POSITION.FS_WINNER, loser: SLOT_TO_POSITION.FS_LOSER },
+  [BRACKET_SLOTS.M78]: { winner: SLOT_TO_POSITION.M78_WINNER, loser: SLOT_TO_POSITION.M78_LOSER }
+};
+
+interface MatchResultPlayerInfo {
+  playerId: string;
+  won: boolean;
+  nextPhaseLabel: string | null;
+  finalPosition: number | null;
+}
+
+/**
+ * Arma, por jugador registrado (invitados sin `playerId` quedan afuera), si
+ * ganó o perdió, a qué fase sigue (si el equipo avanzó a otro match) o en qué
+ * posición terminó (si el slot era terminal y no hay adónde avanzar).
+ */
+const collectMatchResultInfos = (
+  bracketSlot: string,
+  winnerTeam: IMatchTeam | null,
+  loserTeam: IMatchTeam | null,
+  winnerTarget: IMatch | null,
+  loserTarget: IMatch | null
+): MatchResultPlayerInfo[] => {
+  const positions = FINAL_POSITION_BY_SLOT[bracketSlot];
+  const infos: MatchResultPlayerInfo[] = [];
+
+  const addTeam = (team: IMatchTeam | null, won: boolean, target: IMatch | null, positionKey: "winner" | "loser") => {
+    if (!team) return;
+    const nextPhaseLabel = target?.phase ? MATCH_PHASE_LABELS[target.phase] ?? null : null;
+    const finalPosition = !target && positions ? positions[positionKey] : null;
+    for (const player of team.players) {
+      if (!player.playerId) continue; // invitados: sin cuenta, sin email.
+      infos.push({ playerId: player.playerId.toString(), won, nextPhaseLabel, finalPosition });
+    }
+  };
+
+  addTeam(winnerTeam, true, winnerTarget, "winner");
+  addTeam(loserTeam, false, loserTarget, "loser");
+  return infos;
+};
+
 const advanceWinnerLoser = async (
   current: IMatch
 ): Promise<void> => {
@@ -176,23 +226,48 @@ const advanceWinnerLoser = async (
   const propagate = async (
     targetId: mongoose.Types.ObjectId | undefined,
     team: IMatchTeam | null
-  ) => {
-    if (!targetId || !team) return;
+  ): Promise<IMatch | null> => {
+    if (!targetId || !team) return null;
     const target = await Match.findById(targetId);
-    if (!target) return;
+    if (!target) return null;
     const already = target.teams.some(
       (t) => t.teamId.toString() === team.teamId.toString()
     );
-    if (already) return;
-    target.teams.push(team);
-    if (target.teams.length === 2 && target.status === MATCH_STATUS.PENDING) {
-      target.status = MATCH_STATUS.IN_PROGRESS;
+    if (!already) {
+      target.teams.push(team);
+      if (target.teams.length === 2 && target.status === MATCH_STATUS.PENDING) {
+        target.status = MATCH_STATUS.IN_PROGRESS;
+      }
+      await target.save();
     }
-    await target.save();
+    return target;
   };
 
-  await propagate(current.feedsWinnerTo as mongoose.Types.ObjectId, winnerTeam);
-  await propagate(current.feedsLoserTo as mongoose.Types.ObjectId, loserTeam);
+  const winnerTarget = await propagate(current.feedsWinnerTo as mongoose.Types.ObjectId, winnerTeam);
+  const loserTarget = await propagate(current.feedsLoserTo as mongoose.Types.ObjectId, loserTeam);
+
+  // Aviso de resultado de partido: opt-in (`notificationPrefs.matchResults`),
+  // ver la advertencia de volumen del plan — es el evento de mayor frecuencia
+  // de todo el sistema de notificaciones.
+  if (current.type !== MATCH_TYPES.TOURNAMENT || !current.tournament || !current.bracketSlot) return;
+
+  const infos = collectMatchResultInfos(current.bracketSlot, winnerTeam, loserTeam, winnerTarget, loserTarget);
+  if (infos.length === 0) return;
+
+  const [tournament, recipients] = await Promise.all([
+    Tournament.findById(current.tournament).select("name"),
+    resolveUsers(infos.map((i) => i.playerId))
+  ]);
+  if (!tournament) return;
+
+  const byId = new Map(recipients.map((u) => [String(u._id), u]));
+  const entries: MatchResultEntry[] = infos.flatMap((info) => {
+    const user = byId.get(info.playerId);
+    return user
+      ? [{ user, won: info.won, nextPhaseLabel: info.nextPhaseLabel, finalPosition: info.finalPosition }]
+      : [];
+  });
+  void notifyMatchResults(entries, tournament.name, String(current.tournament));
 };
 
 export const updateMatch = async (req: Request, res: Response): Promise<void> => {
@@ -208,7 +283,7 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
     }
 
@@ -304,7 +379,7 @@ export const updateMatchScore = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
 
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para modificar este partido" });
     }
 
@@ -355,7 +430,7 @@ export const deleteMatch = async (req: Request, res: Response): Promise<void> =>
     if (!match) {
       return void res.status(404).json({ message: "Partido no encontrado" });
     }
-    if (!(await canModifyMatch(match, req.user))) {
+    if (!(await canModifyMatch(match, req))) {
       return void res.status(403).json({ message: "No tenés permiso para eliminar este partido" });
     }
     if (match.tournament) {

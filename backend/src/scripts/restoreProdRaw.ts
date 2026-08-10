@@ -14,7 +14,7 @@ dotenv.config();
  * Uso: npx ts-node src/scripts/restoreProdRaw.ts --confirm-db=trickApp --from=backend/backups/trickApp-2026-07-25T.../ --apply
  * Sin --apply hace dry-run (solo cuenta documentos por archivo).
  */
-const COLLECTIONS = ["users", "tournaments", "matches", "leagues"];
+const COLLECTIONS = ["users", "tournaments", "matches", "leagues", "payments", "subscriptions", "pricingconfigs", "tournamentlogos", "leaguelogos"];
 
 function parseArgs() {
   const args = process.argv.slice(2);

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   List,
@@ -25,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import TournamentLogo from '../../components/TournamentLogo';
 import { TournamentLogoMeta } from '../../types/tournament';
@@ -110,10 +110,7 @@ const InProgressMatches = () => {
     <Box>
       <NavBar />
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" gutterBottom align="center">
-            Partidos en Curso
-          </Typography>
+        <SurfaceCard title="Partidos en Curso">
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -220,7 +217,7 @@ const InProgressMatches = () => {
               </Box>
             </>
           )}
-        </Paper>
+        </SurfaceCard>
 
         <Dialog
           open={deleteDialogOpen}

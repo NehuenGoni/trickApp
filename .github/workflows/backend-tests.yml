@@ -1,0 +1,50 @@
+name: Backend tests
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # mongodb-memory-server descarga el binario de Mongo la primera vez que
+      # corren los tests (src/__tests__/setup.ts). Sin cachear ese binario,
+      # cada run lo vuelve a bajar y queda a merced de timeouts/MD5 mismatch
+      # del servidor de descargas, lo que hace fallar `npm test` de forma
+      # intermitente. Fijamos versión + cacheamos para evitar eso.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-7.0.24
+
+      - run: npm ci
+        env:
+          MONGOMS_VERSION: 7.0.24
+
+      # JWT_SECRET normalmente viene de backend/.env (gitignoreado). Los tests
+      # firman/verifican JWTs de prueba (fixtures.ts) contra el Mongo en
+      # memoria, nunca contra datos reales, así que alcanza con un valor fijo
+      # acá en vez de depender de un secret del repo.
+      - run: npm test
+        env:
+          MONGOMS_VERSION: 7.0.24
+          JWT_SECRET: test-only-secret-ci

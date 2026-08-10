@@ -34,6 +34,7 @@ import {
   ContentCopy as CopyIcon
 } from '@mui/icons-material';
 import AdminLayout from './AdminLayout';
+import SurfaceCard from '../../components/SurfaceCard';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser, { clearCurrentUserCache, UserRole } from '../../hooks/useCurrentUser';
 
@@ -202,7 +203,7 @@ const AdminUsers = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Paper elevation={3} sx={{ p: { xs: 2, md: 3 } }}>
+      <SurfaceCard sx={{ p: { xs: 2, md: 3 } }}>
         <TextField
           fullWidth
           size="small"
@@ -333,7 +334,7 @@ const AdminUsers = () => {
           labelRowsPerPage="Por página"
           labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count}`}
         />
-      </Paper>
+      </SurfaceCard>
 
       {/* Editar perfil */}
       <Dialog open={!!editTarget} onClose={() => setEditTarget(null)} fullWidth maxWidth="xs">

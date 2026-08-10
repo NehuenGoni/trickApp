@@ -7,6 +7,9 @@ const API_ROUTES = {
     PROFILE: `${API_BASE_URL}/auth/profile`,
     FORGOT_PASSWORD: `${API_BASE_URL}/auth/forgot-password`,
     RESET_PASSWORD: (token: string) => `${API_BASE_URL}/auth/reset-password/${token}`,
+    VERIFY_EMAIL: (token: string) => `${API_BASE_URL}/auth/verify-email/${token}`,
+    RESEND_VERIFICATION: `${API_BASE_URL}/auth/resend-verification`,
+    UNSUBSCRIBE: (token: string) => `${API_BASE_URL}/auth/unsubscribe/${token}`,
   },
   USERS: {
     LIST: `${API_BASE_URL}/users`,
@@ -44,6 +47,7 @@ const API_ROUTES = {
       `${API_BASE_URL}/tournaments/${id}/live${since ? `?since=${encodeURIComponent(since)}` : ''}`,
     SIGNUP_ADMIN: (id: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin`,
     SIGNUP_ADMIN_REMOVE: (id: string, signupId: string) => `${API_BASE_URL}/tournaments/${id}/signups/admin/${signupId}`,
+    ROSTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/roster`,
     // El `version` va como query param para invalidar el cache del browser:
     // el endpoint responde con `Cache-Control: immutable`, así que la única
     // forma de que refetchee una imagen nueva es que cambie la URL.
@@ -65,6 +69,19 @@ const API_ROUTES = {
     TOURNAMENT_RECALCULATE: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/recalculate`,
     TOURNAMENT_MATCHES: (id: string) => `${API_BASE_URL}/admin/tournaments/${id}/matches`,
     MATCH: (id: string) => `${API_BASE_URL}/admin/matches/${id}`,
+    SUBSCRIPTIONS: `${API_BASE_URL}/admin/subscriptions`,
+    USER_BILLING: (id: string) => `${API_BASE_URL}/admin/users/${id}/billing`,
+    USER_SUBSCRIPTION: (id: string) => `${API_BASE_URL}/admin/users/${id}/subscription`,
+    USER_PLAN: (id: string) => `${API_BASE_URL}/admin/users/${id}/plan`,
+    PRICING: `${API_BASE_URL}/admin/pricing`,
+  },
+  BILLING: {
+    ME: `${API_BASE_URL}/billing/me`,
+    PRICING: `${API_BASE_URL}/billing/pricing`,
+    HISTORY: `${API_BASE_URL}/billing/history`,
+    CHECKOUT: `${API_BASE_URL}/billing/checkout`,
+    CANCEL: `${API_BASE_URL}/billing/subscription/cancel`,
+    SYNC: `${API_BASE_URL}/billing/subscription/sync`,
   },
   TEAMS: {
     CREATE: `${API_BASE_URL}/teams`,
@@ -75,15 +92,75 @@ const API_ROUTES = {
   },
   LEAGUES: {
     CREATE: `${API_BASE_URL}/leagues`,
+    // Filtro de inactivas vía `apiRequest(LIST, { params: { includeInactive: 1 } })`.
     LIST: `${API_BASE_URL}/leagues`,
     DETAIL: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
-    ADD_TOURNAMENT: `${API_BASE_URL}/leagues/add-tournament`,
-    UPDATE_POINTS: `${API_BASE_URL}/leagues/update-points`,
     STANDINGS: (id: string) => `${API_BASE_URL}/leagues/${id}/standings`,
+    // Sirve tanto para agregar (PUT) como para quitar (DELETE) un torneo de la liga.
+    LEAGUE_TOURNAMENT: (id: string, tournamentId: string) =>
+      `${API_BASE_URL}/leagues/${id}/tournaments/${tournamentId}`,
+    // El `version` va como query param para invalidar el cache del browser, igual que en torneos.
+    LOGO: (id: string, version?: string) =>
+      `${API_BASE_URL}/leagues/${id}/logo${version ? `?v=${encodeURIComponent(version)}` : ''}`,
+    LOGO_UPLOAD: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
+    LOGO_DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}/logo`,
+    // POST para agregar (body: { userId }), DELETE con el userId en la URL para quitar.
+    ORGANIZERS: (id: string) => `${API_BASE_URL}/leagues/${id}/organizers`,
+    ORGANIZER: (id: string, userId: string) => `${API_BASE_URL}/leagues/${id}/organizers/${userId}`,
   },
 };
+
+/**
+ * El backend gatea la creación de torneos y ligas con 402, y manda el
+ * detalle del plan y el uso en el body (ver `BILLING_GATE_MESSAGES` en
+ * `tournament.controller.ts` y el gate de `createLeague`). Este error tipado
+ * es lo que le permite a la UI abrir el diálogo de upgrade con ese dato
+ * concreto, en vez de mostrar un toast rojo genérico indistinguible de
+ * cualquier otro 4xx.
+ */
+export class PaymentRequiredError extends Error {
+  reason?: string;
+  plan?: string;
+  usage?: { periodKey: string; tournamentsCreated: number; tournamentsTotal: number };
+
+  constructor(message: string, data: { reason?: string; plan?: string; usage?: PaymentRequiredError['usage'] }) {
+    super(message);
+    this.name = 'PaymentRequiredError';
+    this.reason = data.reason;
+    this.plan = data.plan;
+    this.usage = data.usage;
+  }
+}
+
+/**
+ * `POST /billing/checkout` responde así (409, `fallback: 'manual'`) cuando
+ * MercadoPago no está configurado en el backend. Permite que la UI caiga al
+ * diálogo de contacto manual en vez de mostrar un error genérico.
+ */
+export class CheckoutUnavailableError extends Error {
+  fallback: string;
+
+  constructor(message: string, fallback: string) {
+    super(message);
+    this.name = 'CheckoutUnavailableError';
+    this.fallback = fallback;
+  }
+}
+
+/**
+ * `requireVerifiedEmail` (backend) responde así (403, `reason: 'email_not_verified'`)
+ * cuando el usuario intenta crear un torneo o iniciar un checkout sin haber
+ * confirmado su cuenta. Permite que la UI muestre el CTA de reenvío en vez de
+ * un error genérico indistinguible de cualquier otro 403.
+ */
+export class EmailNotVerifiedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmailNotVerifiedError';
+  }
+}
 
 export const apiRequest = async (url: string, options: RequestInit & { params?: Record<string, any> } = {}) => {
   const token = localStorage.getItem('token');
@@ -131,12 +208,32 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         errorMessage = parsedData.message;
       }
 
-      // 401 = sesión inválida o revocada (por ejemplo, tras un reset de contraseña).
-      // 403 es falta de permisos: ahí la sesión sigue siendo válida y el error se muestra.
-      if (errorMessage === "Token inválido" || response.status === 401) {
+      // 401 con token = sesión inválida o revocada (por ejemplo, tras un reset de
+      // contraseña): ahí sí conviene mandar a /login. Pero en páginas públicas
+      // (torneo/liga compartidos) se piden igual algunos datos "si hay sesión" —
+      // por ejemplo `useCurrentUser` para saber si mostrar controles de admin — y
+      // esas llamadas van sin token a propósito. Un 401 sin token no es una sesión
+      // caída, es un visitante anónimo; no hay que sacarlo de la página.
+      if ((errorMessage === "Token inválido" || response.status === 401) && token) {
         localStorage.removeItem("token");
         window.location.href = "/login";
         return;
+      }
+
+      if (response.status === 402) {
+        throw new PaymentRequiredError(errorMessage, {
+          reason: parsedData?.reason,
+          plan: parsedData?.plan,
+          usage: parsedData?.usage
+        });
+      }
+
+      if (response.status === 403 && parsedData?.reason === 'email_not_verified') {
+        throw new EmailNotVerifiedError(errorMessage);
+      }
+
+      if (parsedData?.fallback) {
+        throw new CheckoutUnavailableError(errorMessage, parsedData.fallback);
       }
 
       throw new Error(errorMessage);

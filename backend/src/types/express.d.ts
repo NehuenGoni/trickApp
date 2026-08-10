@@ -1,9 +1,11 @@
 import { JwtPayload } from "jsonwebtoken";
-import { UserRole } from "../models/User";
+import { UserRole, IBilling } from "../models/User";
 
 interface AuthUser {
   id: string;
   role: UserRole;
+  billing?: IBilling;
+  emailVerified: boolean;
 }
 
 declare global {

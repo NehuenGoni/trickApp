@@ -53,6 +53,27 @@ jest.mock('../pages/tournaments/TournamentDetails', () => {
   return TournamentDetails;
 });
 
+jest.mock('../pages/leagues/LeagueList', () => {
+  const LeagueList = () => (
+    <div>League List Component</div>
+  );
+  return LeagueList;
+});
+
+jest.mock('../pages/leagues/LeagueForm', () => {
+  const LeagueForm = () => (
+    <div>League Form Component</div>
+  );
+  return LeagueForm;
+});
+
+jest.mock('../pages/leagues/LeagueDetails', () => {
+  const LeagueDetails = () => (
+    <div>League Details Component</div>
+  );
+  return LeagueDetails;
+});
+
 jest.mock('../components/NavBar', () => {
   const NavBar = () => (
     <nav data-testid="navbar">

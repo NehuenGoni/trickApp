@@ -11,7 +11,7 @@ import {
 import {
   SportsEsports as GameIcon,
   EmojiEvents as TournamentIcon,
-  Timeline as LeagueIcon
+  Leaderboard as LeagueIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
@@ -43,7 +43,7 @@ const Dashboard = () => {
       title: 'Ligas',
       description: 'Compite en ligas a largo plazo',
       icon: <LeagueIcon sx={{ fontSize: 40 }} />,
-      comingSoon: true
+      action: () => navigate('/leagues')
     }
   ];
 
@@ -55,10 +55,10 @@ const Dashboard = () => {
           <AppLogo size={96} />
         </Box>
 
-        <Typography variant="h4" gutterBottom align="center">
+        <Typography variant="h4" gutterBottom align="center" sx={{ color: '#FFD700', fontWeight: 700 }}>
           ¡Bienvenido a TrickApp!
         </Typography>
-        
+
         <Grid container spacing={3} sx={{ mt: 2 }}>
           {cards.map((card, index) => (
             <Grid item xs={12} md={4} key={index}>
@@ -70,9 +70,12 @@ const Dashboard = () => {
                   position: 'relative',
                   cursor: card.comingSoon ? 'default' : 'pointer',
                   opacity: card.comingSoon ? 0.6 : 1,
+                  border: '1px solid transparent',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                   ...(!card.comingSoon && {
                     '&:hover': {
-                      boxShadow: 6
+                      borderColor: '#FFD700',
+                      boxShadow: '0px 4px 12px rgba(0,0,0,0.4)'
                     }
                   })
                 }}
@@ -93,7 +96,7 @@ const Dashboard = () => {
                   alignItems: 'center',
                   textAlign: 'center'
                 }}>
-                  {card.icon}
+                  <Box sx={{ color: '#FFD700' }}>{card.icon}</Box>
                   <Typography variant="h6" component="h2" sx={{ mt: 2 }}>
                     {card.title}
                   </Typography>

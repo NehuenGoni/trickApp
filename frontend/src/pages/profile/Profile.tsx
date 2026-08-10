@@ -1,21 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   Avatar,
   Grid,
   TextField,
   Button,
-  Alert
+  Alert,
+  Tabs,
+  Tab
 } from '@mui/material';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import NavBar from '../../components/NavBar';
-import { useNavigate } from "react-router-dom";
+import SurfaceCard from '../../components/SurfaceCard';
+import { useNavigate, useSearchParams } from "react-router-dom";
+import PlanTab from './PlanTab';
+import NotificationPrefsTab from './NotificationPrefsTab';
+
+type ProfileTab = 'account' | 'plan' | 'notifications';
 
 const Profile = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const activeTab: ProfileTab = rawTab === 'plan' || rawTab === 'notifications' ? rawTab : 'account';
+
+  const handleTabChange = (_: React.SyntheticEvent, value: ProfileTab) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === 'account') next.delete('tab');
+    else next.set('tab', value);
+    setSearchParams(next);
+  };
+
   const [userData, setUserData] = useState({
     username: '',
     email: '',
@@ -92,83 +109,106 @@ const Profile = () => {
   return (
     <Box>
       <NavBar />
-      <Container maxWidth="sm" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
-            <Avatar sx={{ width: 100, height: 100, mb: 2 }}>
-              {userData.username.charAt(0).toUpperCase()}
-            </Avatar>
-            <Typography variant="h5" gutterBottom>
-              Editar Perfil
-            </Typography>
-          </Box>
+      <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+          <Avatar
+            sx={{
+              width: 100,
+              height: 100,
+              mb: 2,
+              bgcolor: 'background.paper',
+              border: '2px solid #FFD700',
+              color: '#FFD700',
+              fontSize: '2.5rem',
+              fontWeight: 700
+            }}
+          >
+            {userData.username.charAt(0).toUpperCase()}
+          </Avatar>
+          <Typography variant="h5" sx={{ color: '#FFD700', fontWeight: 700 }}>
+            {userData.username || 'Tu perfil'}
+          </Typography>
+        </Box>
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+        <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 3 }} centered>
+          <Tab label="Cuenta" value="account" />
+          <Tab label="Mi Plan" value="plan" />
+          <Tab label="Notificaciones" value="notifications" />
+        </Tabs>
 
-          <Box component="form" onSubmit={handleUpdateProfile}>
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Nombre de usuario"
-                  name="username"
-                  value={userData.username}
-                  onChange={handleInputChange}
-                />
+        {activeTab === 'account' && (
+          <SurfaceCard sx={{ maxWidth: 520, mx: 'auto' }}>
+            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+            <Box component="form" onSubmit={handleUpdateProfile}>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Nombre de usuario"
+                    name="username"
+                    value={userData.username}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    name="email"
+                    value={userData.email}
+                    disabled
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Contraseña actual"
+                    name="currentPassword"
+                    type="password"
+                    value={userData.currentPassword}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Nueva contraseña"
+                    name="newPassword"
+                    type="password"
+                    value={userData.newPassword}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Confirmar nueva contraseña"
+                    name="confirmPassword"
+                    type="password"
+                    value={userData.confirmPassword}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    color="secondary"
+                    fullWidth
+                    size="large"
+                  >
+                    Actualizar Perfil
+                  </Button>
+                </Grid>
               </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Email"
-                  name="email"
-                  value={userData.email}
-                  disabled
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Contraseña actual"
-                  name="currentPassword"
-                  type="password"
-                  value={userData.currentPassword}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Nueva contraseña"
-                  name="newPassword"
-                  type="password"
-                  value={userData.newPassword}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Confirmar nueva contraseña"
-                  name="confirmPassword"
-                  type="password"
-                  value={userData.confirmPassword}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  fullWidth
-                  size="large"
-                >
-                  Actualizar Perfil
-                </Button>
-              </Grid>
-            </Grid>
-          </Box>
-        </Paper>
+            </Box>
+          </SurfaceCard>
+        )}
+
+        {activeTab === 'plan' && <PlanTab />}
+        {activeTab === 'notifications' && <NotificationPrefsTab />}
       </Container>
     </Box>
   );

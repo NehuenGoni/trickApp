@@ -5,6 +5,7 @@ import {
   TEAM_FORMATION_MODES,
   GUEST_DRAW_MODES
 } from "../config/constants";
+import { PlanId, PLAN_IDS } from "../config/plans";
 
 export type TournamentType = typeof TOURNAMENT_TYPES[keyof typeof TOURNAMENT_TYPES];
 export type TournamentFormat = typeof TOURNAMENT_FORMATS[keyof typeof TOURNAMENT_FORMATS];
@@ -15,6 +16,14 @@ export interface IPlayer {
   playerId?: mongoose.Types.ObjectId;
   name: string;
   isGuest?: boolean;
+  /**
+   * Entrada de `individualSignups` de la que salió este jugador. Es lo que
+   * permite saber con exactitud qué inscripto corresponde a qué jugador de un
+   * equipo: los invitados no tienen `playerId` y pueden repetir nombre.
+   * Opcional: los torneos ya sorteados antes de esta feature no lo tienen y se
+   * resuelven por el fallback de `playerKey` (ver utils/roster.ts).
+   */
+  signupId?: mongoose.Types.ObjectId;
 }
 
 export interface ITeam {
@@ -22,6 +31,13 @@ export interface ITeam {
   name: string;
   registeredBy?: mongoose.Types.ObjectId;
   players: IPlayer[];
+  /**
+   * El equipo deriva de `individualSignups`: sus jugadores ya están contados en
+   * el pool y no se suman aparte al calcular cupos (ver `countFilledSlots`).
+   * Lo marcan tanto el sorteo de `random` como el armado manual de
+   * `creator-formed`. Los equipos cargados enteros a mano (`addGuestTeam`,
+   * inscripción en `user-formed`) van sin el flag y sí ocupan cupo propio.
+   */
   isDrawn?: boolean;
 }
 
@@ -61,6 +77,12 @@ export interface ITournament extends Document {
   teams: ITeam[];
   individualSignups: IIndividualSignup[];
   draftPairOrder?: mongoose.Types.ObjectId[];
+  /**
+   * Última vez que el creador reorganizó los equipos a mano (roster editor).
+   * Sirve para avisar, antes de re-sortear en modo `random`, que esos cambios
+   * se van a perder. Se limpia al sortear y al iniciar.
+   */
+  rosterEditedAt?: Date;
   matches: mongoose.Types.ObjectId[];
   playerStats: IPlayerStat[];
   pointsAwarded: boolean;
@@ -70,6 +92,17 @@ export interface ITournament extends Document {
   description?: string;
   status: 'upcoming' | 'in_progress' | 'completed';
   logo?: ITournamentLogoMeta | null;
+  /** Liga a la que pertenece, si la tiene. Un torneo pertenece a una sola liga. */
+  league?: mongoose.Types.ObjectId | null;
+  billing?: ITournamentBillingCharge | null;
+}
+
+/** Bajo qué plan y período se cobró este torneo (ver `services/billing.ts`). */
+export interface ITournamentBillingCharge {
+  plan: PlanId;
+  /** 'YYYY-MM' del período en que se creó, para saber si borrar el torneo todavía puede devolver el cupo. */
+  periodKey: string;
+  chargedAt: Date;
 }
 
 const PlayerSchema = new Schema<IPlayer>({
@@ -81,7 +114,8 @@ const PlayerSchema = new Schema<IPlayer>({
     }
   },
   name: { type: String, required: false },
-  isGuest: { type: Boolean, default: false }
+  isGuest: { type: Boolean, default: false },
+  signupId: { type: Schema.Types.ObjectId, required: false }
 });
 
 const TeamSchema = new Schema<ITeam>({
@@ -109,6 +143,12 @@ const PlayerStatSchema = new Schema<IPlayerStat>({
   isGuest: { type: Boolean, default: false },
   position: { type: Number, required: true, min: 1, max: 8 },
   points: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+const BillingChargeSchema = new Schema<ITournamentBillingCharge>({
+  plan: { type: String, enum: PLAN_IDS, required: true },
+  periodKey: { type: String, required: true },
+  chargedAt: { type: Date, required: true }
 }, { _id: false });
 
 const LogoMetaSchema = new Schema<ITournamentLogoMeta>({
@@ -148,6 +188,7 @@ const tournamentSchema = new Schema<ITournament>(
     teams: { type: [TeamSchema], default: [] },
     individualSignups: { type: [IndividualSignupSchema], default: [] },
     draftPairOrder: { type: [Schema.Types.ObjectId], default: undefined },
+    rosterEditedAt: { type: Date, default: undefined },
     startDate: { type: Date, required: true },
     description: { type: String },
     matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],
@@ -161,10 +202,23 @@ const tournamentSchema = new Schema<ITournament>(
     // Los torneos creados antes de esta feature simplemente no tienen el campo:
     // se leen como `null` y el frontend cae al fallback de iniciales.
     logo: { type: LogoMetaSchema, default: null },
+    // Opcional: la gran mayoría de los torneos no pertenece a ninguna liga.
+    // Es la única fuente de verdad del vínculo torneo↔liga (ver models/League.ts).
+    league: { type: Schema.Types.ObjectId, ref: "League", default: null },
+    // Bajo qué plan y en qué período mensual se creó (ver services/billing.ts).
+    // `null` en torneos legacy/de admin, que no pasaron por el gate de billing.
+    // Sirve para devolver el cupo mensual si el torneo se borra dentro del
+    // mismo período (`releaseTournamentSlot`) y para auditar sin reconstruir
+    // el estado histórico del usuario.
+    billing: { type: BillingChargeSchema, default: null },
     createdAt: { type: Date, default: Date.now },
   },
   { collection: "tournaments", timestamps: true }
 );
+
+// Es exactamente la query que arma la tabla de posiciones de una liga
+// (computeLeagueStandings): todos los torneos completados de una liga.
+tournamentSchema.index({ league: 1, status: 1 });
 
 const TournamentModel = model<ITournament>("Tournament", tournamentSchema);
 

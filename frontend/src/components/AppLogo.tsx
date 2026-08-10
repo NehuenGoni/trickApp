@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.webp';
 
 interface AppLogoProps {
   size?: number;
