@@ -19,7 +19,8 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": ".",
+  "description": "Organizá torneos, ligas y partidos de truco",
+  "start_url": "/dashboard",
   "display": "standalone",
   "theme_color": "#0D1B2A",
   "background_color": "#122620"

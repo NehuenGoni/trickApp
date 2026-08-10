@@ -208,9 +208,13 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         errorMessage = parsedData.message;
       }
 
-      // 401 = sesión inválida o revocada (por ejemplo, tras un reset de contraseña).
-      // 403 es falta de permisos: ahí la sesión sigue siendo válida y el error se muestra.
-      if (errorMessage === "Token inválido" || response.status === 401) {
+      // 401 con token = sesión inválida o revocada (por ejemplo, tras un reset de
+      // contraseña): ahí sí conviene mandar a /login. Pero en páginas públicas
+      // (torneo/liga compartidos) se piden igual algunos datos "si hay sesión" —
+      // por ejemplo `useCurrentUser` para saber si mostrar controles de admin — y
+      // esas llamadas van sin token a propósito. Un 401 sin token no es una sesión
+      // caída, es un visitante anónimo; no hay que sacarlo de la página.
+      if ((errorMessage === "Token inválido" || response.status === 401) && token) {
         localStorage.removeItem("token");
         window.location.href = "/login";
         return;
