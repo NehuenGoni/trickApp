@@ -8,11 +8,20 @@ name: Billing cron
 
 on:
   schedule:
-    # 13:00 UTC = 10:00 ART. El endpoint manda mails de recordatorio de
-    # vencimiento, así que conviene una hora en la que la gente los lea y no
-    # la madrugada. GitHub puede atrasar los cron hasta ~30min en horas pico;
-    # la tarea es idempotente, así que el atraso no importa.
-    - cron: "7 13 * * *"
+    # Cada hora. Es la última red de seguridad para un usuario que pagó y cuya
+    # suscripción no se acreditó: si ni el webhook ni el sync de la vuelta del
+    # checkout la levantaron, queda `pending` hasta que pase este cron. Con
+    # frecuencia diaria el peor caso era 24hs viendo el plan inactivo después
+    # de haber pagado.
+    #
+    # Correrlo seguido es seguro: reconciliar es idempotente, y los
+    # recordatorios de vencimiento no se duplican porque se marcan con el
+    # `currentPeriodEnd` ya avisado (`billing.lastExpiryReminderAt`), no con
+    # una ventana de tiempo.
+    #
+    # Minuto 7 y no 0: los horarios en punto son los más congestionados en
+    # Actions y es cuando más se atrasan los disparos.
+    - cron: "7 * * * *"
   # Para dispararlo a mano desde la pestaña Actions, sin esperar 24hs.
   workflow_dispatch:
 

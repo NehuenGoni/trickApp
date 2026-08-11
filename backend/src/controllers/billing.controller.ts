@@ -32,7 +32,8 @@ import {
   getPreapproval,
   getAuthorizedPayment,
   updatePreapprovalStatus,
-  verifyWebhookSignature
+  verifyWebhookSignature,
+  MercadoPagoError
 } from "../services/mercadopago";
 import {
   notifyPaymentApproved,
@@ -227,17 +228,26 @@ export const createCheckout = async (req: AuthRequest, res: Response): Promise<v
  * detectado como duplicado): cualquier otra cosa hace que MP reintente.
  */
 export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const type = (req.query.type as string | undefined) ?? (req.body?.type as string | undefined);
-    const dataId =
-      (req.query["data.id"] as string | undefined) ?? (req.body?.data?.id as string | undefined);
+  const type = (req.query.type as string | undefined) ?? (req.body?.type as string | undefined);
+  const dataId =
+    (req.query["data.id"] as string | undefined) ?? (req.body?.data?.id as string | undefined);
 
+  // Sin esta traza no hay forma de distinguir "MP nunca notificó" de "MP
+  // notificó y lo rechazamos/ignoramos": las tres situaciones se ven idénticas
+  // desde afuera, porque el endpoint responde 200 tanto cuando acredita un
+  // cobro como cuando descarta un evento que no le corresponde.
+  console.log(`[webhook:mp] evento recibido — type=${type ?? "(sin type)"} data.id=${dataId ?? "(sin id)"}`);
+
+  try {
     const signatureOk = verifyWebhookSignature({
       xSignature: req.header("x-signature"),
       xRequestId: req.header("x-request-id"),
       dataId
     });
     if (!signatureOk) {
+      // Casi siempre es `MP_WEBHOOK_SECRET` desincronizado con el panel de MP
+      // (o la clave de otra aplicación). Sin este log, el rechazo es mudo.
+      console.warn(`[webhook:mp] firma inválida — type=${type} data.id=${dataId}`);
       res.status(401).json({ message: "Firma inválida" });
       return;
     }
@@ -277,6 +287,21 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
 
     res.status(200).json({ received: true });
   } catch (error: any) {
+    // MP reintenta ante cualquier respuesta que no sea 2xx. Si el recurso no
+    // existe (404), ningún reintento va a prosperar: cerramos el evento con
+    // 200 para no quedar recibiendo la misma notificación imposible. Es
+    // también lo que manda el botón "Simular notificación" del panel, que usa
+    // ids ficticios (`data.id: "123456"`) que no corresponden a ningún
+    // preapproval real.
+    if (error instanceof MercadoPagoError && error.status === 404) {
+      console.warn(`[webhook:mp] recurso inexistente en MP — type=${type} data.id=${dataId}. Evento descartado.`);
+      res.status(200).json({ received: true, ignored: "not_found" });
+      return;
+    }
+
+    // El resto sí puede ser transitorio (MP caído, timeout, Mongo): devolvemos
+    // 500 a propósito para que MP reintente.
+    console.error(`[webhook:mp] error procesando el evento — type=${type} data.id=${dataId}:`, error);
     res.status(500).json({ message: "Error al procesar el webhook", error: error.message });
   }
 };
