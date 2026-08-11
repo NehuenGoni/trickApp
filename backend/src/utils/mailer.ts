@@ -19,8 +19,17 @@ let cachedClient: Resend | null = null;
  * El envío de mails es opcional: si no hay una API key de Resend configurada
  * la app sigue funcionando y el contenido se escribe en la consola del
  * servidor, para poder probar los flujos en desarrollo sin cuenta de Resend.
+ *
+ * En `NODE_ENV=test` (Jest lo setea solo) nunca se manda de verdad, aunque
+ * `.env` tenga una `RESEND_API_KEY` real cargada para desarrollo local: los
+ * tests usan direcciones inventadas (`fixtures.ts`, `user-x@test.local`) que
+ * rebotan, consumen la cuota diaria de Resend y dañan la reputación de
+ * entrega del dominio. Sin esta guarda, cualquier test que dispare una
+ * notificación (billing, ligas, puntos) manda mails reales sin que nadie lo
+ * pida explícitamente.
  */
-export const isMailConfigured = (): boolean => Boolean(process.env.RESEND_API_KEY);
+export const isMailConfigured = (): boolean =>
+  process.env.NODE_ENV !== "test" && Boolean(process.env.RESEND_API_KEY);
 
 const getClient = (): Resend => {
   if (cachedClient) return cachedClient;

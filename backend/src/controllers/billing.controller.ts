@@ -263,20 +263,15 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
       });
       if (subscription) {
         if (authorizedPayment.payment?.status === "approved") {
-          const result = await applyProviderSubscriptionCharge({
+          // El aviso al usuario lo dispara `applyProviderSubscriptionCharge`,
+          // para que un cobro acreditado por el sync o por el cron avise igual
+          // que uno acreditado por este webhook. Ahí también se descartan los
+          // reintentos de MP, que no deben re-mandar el mail.
+          await applyProviderSubscriptionCharge({
             subscriptionId: String(subscription._id),
             amount: authorizedPayment.transaction_amount,
             externalId: String(authorizedPayment.id)
           });
-          // MP reintenta webhooks: en un reintento `result` es `{ duplicate: true }`
-          // y no hay que volver a avisar un cobro que el usuario ya recibió.
-          if ("subscription" in result) {
-            void notifyPaymentApproved(
-              String(result.subscription.userId),
-              result.subscription.plan,
-              result.subscription.currentPeriodEnd ?? null
-            );
-          }
         } else if (authorizedPayment.payment?.status === "rejected") {
           await markSubscriptionPastDue(String(subscription.userId));
           void notifyPaymentRejected(String(subscription.userId), subscription.plan);

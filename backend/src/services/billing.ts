@@ -6,6 +6,7 @@ import Payment, { IPayment } from "../models/Payment";
 import League from "../models/League";
 import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
 import { withTransaction } from "../utils/withTransaction";
+import { notifyPaymentApproved } from "./notifications";
 import { EXPIRY_REMINDER_WINDOW_DAYS } from "../config/constants";
 
 export interface EffectiveBilling {
@@ -326,17 +327,24 @@ export const updateSubscriptionMandateStatus = async (params: {
  * Si dos entregas llegan en simultáneo, el índice único de `Payment` aborta
  * la transacción perdedora y el caller decide si reintentar.
  */
+export type ProviderChargeResult =
+  | { subscription: ISubscription; payment: IPayment }
+  | { duplicate: true }
+  | { notFound: true };
+
 export const applyProviderSubscriptionCharge = async (params: {
   subscriptionId: string;
   amount: number;
   externalId: string;
-}): Promise<{ subscription: ISubscription; payment: IPayment } | { duplicate: true } | { notFound: true }> => {
+}): Promise<ProviderChargeResult> => {
   const { subscriptionId, amount, externalId } = params;
 
   const alreadyProcessed = await Payment.exists({ paymentProvider: "mercadopago", externalId });
   if (alreadyProcessed) return { duplicate: true };
 
-  return withTransaction(async (session) => {
+  // El genérico explícito evita que TypeScript ensanche `notFound: true` a
+  // `boolean` al pasar por una variable intermedia en vez de retornar directo.
+  const result = await withTransaction<ProviderChargeResult>(async (session) => {
     const subscription = await Subscription.findById(subscriptionId).session(session ?? null);
     if (!subscription) return { notFound: true };
 
@@ -386,6 +394,28 @@ export const applyProviderSubscriptionCharge = async (params: {
 
     return { subscription, payment };
   });
+
+  // El aviso de cobro se dispara ACÁ y no en los callers a propósito. Cuando
+  // vivía en el webhook, un pago acreditado por el sync de la vuelta del
+  // checkout o por el cron no generaba ningún mail: el cliente pagaba y nunca
+  // recibía su comprobante. Y no es un caso de borde — en sandbox MP no
+  // notifica nunca, y en producción alcanza con que el webhook demore más que
+  // la vuelta del usuario. Junto a la acreditación, los tres caminos avisan
+  // igual.
+  //
+  // Va después del commit y fuera de la transacción (misma regla que el resto
+  // de `notifications.ts`): avisar de un cobro que todavía puede revertirse
+  // sería peor que avisar tarde. Un `duplicate` no llega hasta acá, así que
+  // los reintentos de webhook de MP no re-mandan el mail.
+  if ("subscription" in result) {
+    void notifyPaymentApproved(
+      String(result.subscription.userId),
+      result.subscription.plan,
+      result.subscription.currentPeriodEnd ?? null
+    );
+  }
+
+  return result;
 };
 
 /** Un cobro recurrente rechazado no toca el período pagado, pero marca la cuenta como en mora. */
