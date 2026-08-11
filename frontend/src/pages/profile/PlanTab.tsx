@@ -23,6 +23,7 @@ import useBilling from '../../hooks/useBilling';
 import useBillingHistory from '../../hooks/useBillingHistory';
 import usePricing from '../../hooks/usePricing';
 import API_ROUTES, { apiRequest } from '../../config/api';
+import { MyBilling } from '../../types/billing';
 import { formatArs } from '../../config/plans';
 import SurfaceCard from '../../components/SurfaceCard';
 
@@ -70,25 +71,66 @@ const PlanTab = () => {
   // Vuelta desde MercadoPago: no confiamos en que el webhook ya haya llegado
   // (puede demorar, o directamente no llegar) — pedimos al backend que
   // reconcilie contra el estado real de MP antes de refrescar.
+  //
+  // Con reintentos porque hay una carrera real: MP redirige al comprador apenas
+  // confirma el pago, pero tarda unos segundos más en pasar el preapproval a
+  // `authorized` y en generar el `authorized_payment`. Un sync único puede
+  // llegar antes de eso, y el backend corta sin acreditar nada
+  // (`reconcileProviderSubscription` retorna si el preapproval no está
+  // `authorized` todavía). Sin reintento, el usuario que ACABA de pagar ve su
+  // plan inactivo hasta que corra el cron de reconciliación.
   useEffect(() => {
     // MP le agrega sus propios parámetros (p.ej. `preapproval_id`) al final del
     // `back_url` con un `?` en vez de `&` cuando este ya tenía query string
     // propio — el valor de `mp` puede terminar siendo "return?preapproval_id=..."
     // en vez de "return" a secas, por eso `startsWith` en vez de igualdad exacta.
-    if (searchParams.get('mp')?.startsWith('return')) {
-      setConfirming(true);
-      apiRequest(API_ROUTES.BILLING.SYNC, { method: 'POST' })
-        .catch(() => {
-          // Si la reconciliación falla igual refrescamos: el webhook puede haber
-          // llegado por su cuenta mientras tanto.
-        })
-        .then(() => Promise.all([refresh(), refreshHistory()]))
-        .finally(() => {
-          const next = new URLSearchParams(searchParams);
-          next.delete('mp');
-          setSearchParams(next, { replace: true });
-        });
-    }
+    if (!searchParams.get('mp')?.startsWith('return')) return;
+
+    let cancelled = false;
+    setConfirming(true);
+
+    // Esperas crecientes: el caso normal resuelve en el primer intento sin
+    // demora, y los siguientes cubren a MP cuando va lento (~17s en total).
+    const RETRY_DELAYS_MS = [0, 2000, 5000, 10000];
+
+    const syncWithRetries = async () => {
+      let activated = false;
+
+      for (const delay of RETRY_DELAYS_MS) {
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        if (cancelled) return;
+
+        try {
+          const data = (await apiRequest(API_ROUTES.BILLING.SYNC, { method: 'POST' })) as MyBilling;
+          if (data?.isActive) {
+            activated = true;
+            break;
+          }
+        } catch {
+          // Seguimos reintentando: puede ser un blip de red o de la API de MP.
+          // Si al final ninguno prospera, el cron de reconciliación lo levanta.
+        }
+      }
+
+      if (cancelled) return;
+      await Promise.all([refresh(), refreshHistory()]);
+      if (cancelled) return;
+
+      // El aviso solo queda si NO llegamos a acreditar: ahí sí el usuario tiene
+      // que saber que su pago puede tardar en reflejarse. Si se acreditó, el
+      // plan ya se ve en pantalla y el cartel sobra.
+      if (activated) setConfirming(false);
+
+      const next = new URLSearchParams(searchParams);
+      next.delete('mp');
+      setSearchParams(next, { replace: true });
+    };
+
+    void syncWithRetries();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
