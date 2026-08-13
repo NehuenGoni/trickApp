@@ -134,6 +134,40 @@ const PlanTab = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sync silencioso en cada visita a esta pestaña, no solo al volver de MP:
+  // barre los casos que ninguno de los otros dos mecanismos cubre bien — el
+  // usuario renovó o canceló desde SU cuenta de MercadoPago (no desde acá), o
+  // un webhook llegó tarde y el cron todavía no pasó. Es casi siempre una
+  // llamada en vano (`reconcileProviderSubscription` corta de inmediato si no
+  // hay una suscripción de MercadoPago en curso), pero preferimos pagar ese
+  // costo antes que mostrar un estado desactualizado hasta la próxima corrida
+  // del cron.
+  //
+  // Se salta si venimos de `?mp=return`: ese caso ya lo cubre el efecto de
+  // arriba, con reintentos y el cartel de "confirmando" — dispararlos los dos
+  // a la vez solo duplicaría el POST sin necesidad. Sin reintentos ni cartel
+  // acá: no hay ningún pago recién hecho esperando a ser reconciliado, así
+  // que un único intento alcanza y un fallo no amerita avisarle al usuario.
+  useEffect(() => {
+    if (searchParams.get('mp')?.startsWith('return')) return;
+
+    let cancelled = false;
+    apiRequest(API_ROUTES.BILLING.SYNC, { method: 'POST' })
+      .then(() => {
+        if (!cancelled) return Promise.all([refresh(), refreshHistory()]);
+      })
+      .catch(() => {
+        // Silencioso a propósito: `billing` ya se cargó por separado (useBilling
+        // hace su propio fetch al montar), así que un fallo acá no deja al
+        // usuario sin datos — solo no logramos refrescarlos contra MP esta vez.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCancel = async () => {
     setCanceling(true);
     setCancelError('');
