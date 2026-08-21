@@ -24,15 +24,23 @@ export const canManageLeagues = (actor?: LeagueActor): boolean =>
   isAdmin(actor?.role) || hasActiveSubscription(actor?.billing);
 
 /**
- * Variante por documento: admin/superadmin, o el `createdBy` de la liga.
- * Deja el hueco para el día en que esto se reemplace por un sistema de
- * suscripción (ver comentario de arriba).
+ * Variante por documento: admin/superadmin, el `createdBy` de la liga, o uno
+ * de sus `organizers`. Antes delegaba el caso general en `canManageLeagues`,
+ * lo que dejaba a CUALQUIER suscriptor activo (no solo al dueño/organizador
+ * de esta liga puntual) asignar o desvincular torneos de una liga ajena. El
+ * gate de suscripción de `canManageLeagues` sigue siendo el que decide quién
+ * puede CREAR una liga nueva — acá lo que importa es quién puede tocar ESTA.
+ * Coherente con `canManageTournament` (`utils/tournamentAccess.ts`), que ya
+ * contemplaba organizadores.
  */
 export const canManageLeague = (
   actor: LeagueActor | undefined,
-  league: Pick<ILeague, "createdBy">
+  league: Pick<ILeague, "createdBy" | "organizers">
 ): boolean =>
-  canManageLeagues(actor) || (!!actor && league.createdBy?.toString() === actor.id);
+  isAdmin(actor?.role) ||
+  (!!actor &&
+    (league.createdBy?.toString() === actor.id ||
+      (league.organizers ?? []).some((organizerId) => organizerId.toString() === actor.id)));
 
 /** Middleware de ruta. Debe montarse siempre después de `authMiddleware`. */
 export const requireLeagueManager = (req: Request, res: Response, next: NextFunction): void => {

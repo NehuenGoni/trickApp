@@ -39,6 +39,7 @@ import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
 import { TournamentLogoMeta, TeamFormationMode } from '../../types/tournament';
 import { LeagueListItem, LeagueRef } from '../../types/league';
+import { toDateTimeLocalInput, fromDateTimeLocalInput } from '../../utils/dateInput';
 
 type TournamentStatus = 'upcoming' | 'in_progress' | 'completed';
 
@@ -52,6 +53,7 @@ interface AdminTournament {
   type: 'grand-slam' | 'master-1000';
   format: 'duos' | 'trios';
   teamFormationMode: TeamFormationMode;
+  guestDrawMode: 'grouped' | 'mixed';
   pointsAwarded: boolean;
   teams: Array<{ teamId: string; name: string; isDrawn?: boolean }>;
   individualSignups?: Array<{ name: string }>;
@@ -98,6 +100,7 @@ const emptyEditForm = {
   type: 'master-1000' as AdminTournament['type'],
   format: 'duos' as AdminTournament['format'],
   teamFormationMode: 'user-formed' as AdminTournament['teamFormationMode'],
+  guestDrawMode: 'grouped' as AdminTournament['guestDrawMode'],
   /** '' = sin liga. */
   league: ''
 };
@@ -204,10 +207,13 @@ const AdminTournaments = () => {
     setEditForm({
       name: tournament.name,
       description: tournament.description || '',
-      startDate: new Date(tournament.startDate).toISOString().slice(0, 16),
+      // Hora LOCAL, no UTC: ver `utils/dateInput.ts`. Con `toISOString().slice(0,16)`
+      // (como estaba antes) cada guardado corría la fecha +offset del huso horario.
+      startDate: toDateTimeLocalInput(tournament.startDate),
       type: tournament.type,
       format: tournament.format,
       teamFormationMode: tournament.teamFormationMode,
+      guestDrawMode: tournament.guestDrawMode,
       league: tournament.league?._id || ''
     });
   };
@@ -218,9 +224,17 @@ const AdminTournaments = () => {
       API_ROUTES.ADMIN.TOURNAMENT(editTarget._id),
       {
         method: 'PUT',
+        // Campos explícitos, no `...editForm`: así nunca se manda un valor
+        // (p.ej. format/teamFormationMode) que el usuario no tocó pero que
+        // pudo quedar desincronizado del que está realmente guardado.
         body: JSON.stringify({
-          ...editForm,
-          startDate: new Date(editForm.startDate).toISOString(),
+          name: editForm.name,
+          description: editForm.description,
+          startDate: fromDateTimeLocalInput(editForm.startDate),
+          type: editForm.type,
+          format: editForm.format,
+          teamFormationMode: editForm.teamFormationMode,
+          guestDrawMode: editForm.guestDrawMode,
           league: editForm.league || null
         })
       },
@@ -618,6 +632,24 @@ const AdminTournaments = () => {
               <MenuItem value="random">Sorteo de equipos</MenuItem>
               <MenuItem value="creator-formed">El creador arma los equipos</MenuItem>
             </TextField>
+            {editForm.teamFormationMode === 'random' && (
+              <TextField
+                select
+                label="Invitados en el sorteo"
+                value={editForm.guestDrawMode}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    guestDrawMode: e.target.value as AdminTournament['guestDrawMode']
+                  })
+                }
+                fullWidth
+                helperText="Agrupados: los primeros equipos salen 100% invitados. Mezclados: entran al sorteo general."
+              >
+                <MenuItem value="grouped">Agrupados entre ellos</MenuItem>
+                <MenuItem value="mixed">Mezclados con todos</MenuItem>
+              </TextField>
+            )}
             <TextField
               select
               label="Liga"

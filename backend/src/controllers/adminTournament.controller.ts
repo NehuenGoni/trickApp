@@ -1,14 +1,11 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import TournamentModel, {
-  ITournament,
   IIndividualSignup
 } from "../models/Tournament";
 import Match, { IMatch } from "../models/Match";
 import User from "../models/User";
 import {
-  TOURNAMENT_TYPES,
-  TOURNAMENT_FORMATS,
   TEAM_FORMATION_MODES,
   FORMAT_TEAM_SIZE,
   TOURNAMENT_TEAMS_COUNT,
@@ -20,9 +17,9 @@ import {
   awardTournamentPoints,
   revertTournamentPoints,
   deleteTournamentCascade,
-  resolveTournamentLeague,
   notifyTournamentClosedFromStats
 } from "./tournament.controller";
+import { applyTournamentUpdate } from "../services/tournamentUpdate";
 import { withTransaction } from "../utils/withTransaction";
 
 interface AuthRequest extends Request {
@@ -90,95 +87,15 @@ export const updateTournament = async (req: Request, res: Response): Promise<voi
       return void res.status(404).json({ message: "Torneo no encontrado" });
     }
 
-    const { name, description, startDate, type, format, teamFormationMode, league } = req.body as {
-      name?: string;
-      description?: string;
-      startDate?: string;
-      type?: string;
-      format?: string;
-      teamFormationMode?: string;
-      league?: string | null;
-    };
-
-    if (league !== undefined) {
-      const resolved = await resolveTournamentLeague(league, req.authUser);
-      if ("error" in resolved) {
-        return void res.status(resolved.status).json({ message: resolved.error });
-      }
-      tournament.league = resolved.league;
-    }
-
-    if (name !== undefined) {
-      if (!name.trim()) {
-        return void res.status(400).json({ message: "El nombre no puede estar vacío" });
-      }
-      tournament.name = name.trim();
-    }
-
-    if (description !== undefined) tournament.description = description;
-
-    if (startDate !== undefined) {
-      const parsed = new Date(startDate);
-      if (Number.isNaN(parsed.getTime())) {
-        return void res.status(400).json({ message: "Fecha de inicio inválida" });
-      }
-      tournament.startDate = parsed;
-    }
-
-    let typeChanged = false;
-    if (type !== undefined) {
-      if (!(Object.values(TOURNAMENT_TYPES) as string[]).includes(type)) {
-        return void res.status(400).json({
-          message: "Tipo de torneo inválido (grand-slam | master-1000)"
-        });
-      }
-      typeChanged = tournament.type !== type;
-      tournament.type = type as ITournament["type"];
-    }
-
-    if (format !== undefined) {
-      if (!(Object.values(TOURNAMENT_FORMATS) as string[]).includes(format)) {
-        return void res.status(400).json({ message: "Formato inválido (duos | trios)" });
-      }
-      const hasParticipants =
-        tournament.teams.length > 0 || tournament.individualSignups.length > 0;
-      if (format !== tournament.format && hasParticipants) {
-        return void res.status(400).json({
-          message:
-            "No se puede cambiar el formato con equipos o inscriptos cargados: cambiaría el tamaño de los equipos"
-        });
-      }
-      tournament.format = format as ITournament["format"];
-    }
-
-    if (teamFormationMode !== undefined) {
-      if (!(Object.values(TEAM_FORMATION_MODES) as string[]).includes(teamFormationMode)) {
-        return void res.status(400).json({ message: "Modo de formación inválido" });
-      }
-      const hasParticipants =
-        tournament.teams.length > 0 || tournament.individualSignups.length > 0;
-      if (teamFormationMode !== tournament.teamFormationMode && hasParticipants) {
-        return void res.status(400).json({
-          message:
-            "No se puede cambiar el modo de formación con equipos o inscriptos cargados"
-        });
-      }
-      tournament.teamFormationMode = teamFormationMode as ITournament["teamFormationMode"];
-    }
-
-    // Cambiar el tipo cambia la tabla de puntos: si ya se repartieron, se recalculan.
-    let recalculated = false;
-    if (typeChanged && tournament.pointsAwarded) {
-      await revertTournamentPoints(tournament);
-      tournament.playerStats = await computePlayerStats(tournament);
-      await awardTournamentPoints(tournament);
-      recalculated = true;
+    const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
+    if ("error" in result) {
+      return void res.status(result.status).json({ message: result.error });
     }
 
     await tournament.save();
 
     res.status(200).json({
-      message: recalculated
+      message: result.recalculated
         ? "Torneo actualizado. Se recalcularon los puntos por el cambio de tipo."
         : "Torneo actualizado",
       tournament

@@ -28,6 +28,7 @@ const CreateMatch = lazy(() => import('./pages/matches/CreateMatch'));
 const Scoreboard = lazy(() => import('./pages/matches/Scoreboard'));
 const TournamentList = lazy(() => import('./pages/tournaments/TournamentList'));
 const CreateTournament = lazy(() => import('./pages/tournaments/CreateTournament'));
+const EditTournament = lazy(() => import('./pages/tournaments/EditTournament'));
 const TournamentDetails = lazy(() => import('./pages/tournaments/TournamentDetails'));
 const LeagueList = lazy(() => import('./pages/leagues/LeagueList'));
 const LeagueForm = lazy(() => import('./pages/leagues/LeagueForm'));
@@ -132,6 +133,15 @@ function App(): JSX.Element {
                 element={
                   <PrivateRoute>
                     <CreateTournament />
+                  </PrivateRoute>
+                }
+              />
+
+              <Route
+                path="/tournaments/:id/edit"
+                element={
+                  <PrivateRoute>
+                    <EditTournament />
                   </PrivateRoute>
                 }
               />

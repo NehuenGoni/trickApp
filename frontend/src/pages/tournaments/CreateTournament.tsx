@@ -24,6 +24,7 @@ import API_ROUTES, { apiRequest, PaymentRequiredError, EmailNotVerifiedError } f
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import { canManageLeague } from '../../utils/leaguePermissions';
+import { toDateTimeLocalInput, fromDateTimeLocalInput } from '../../utils/dateInput';
 import { LeagueListItem } from '../../types/league';
 import { TeamFormationMode } from '../../types/tournament';
 
@@ -75,7 +76,7 @@ const CreateTournament = () => {
   const [formData, setFormData] = useState<TournamentForm>({
     name: '',
     description: '',
-    startDate: new Date().toISOString().split('T')[0],
+    startDate: toDateTimeLocalInput(new Date().toISOString()),
     type: 'grand-slam',
     format: 'duos',
     teamFormationMode: 'user-formed',
@@ -161,7 +162,7 @@ const CreateTournament = () => {
         body: JSON.stringify({
           name: formData.name,
           description: formData.description,
-          startDate: formData.startDate,
+          startDate: fromDateTimeLocalInput(formData.startDate),
           type: formData.type,
           format: formData.format,
           teamFormationMode: formData.teamFormationMode,
@@ -316,8 +317,8 @@ const CreateTournament = () => {
                 />
                 <TextField
                   fullWidth
-                  label="Fecha de inicio"
-                  type="date"
+                  label="Fecha y hora de inicio"
+                  type="datetime-local"
                   value={formData.startDate}
                   onChange={(e) =>
                     setFormData({ ...formData, startDate: e.target.value })
@@ -468,7 +469,7 @@ const CreateTournament = () => {
                     <Typography><b>Descripción:</b> {formData.description}</Typography>
                   )}
                   <Typography>
-                    <b>Fecha:</b> {new Date(formData.startDate).toLocaleDateString()}
+                    <b>Fecha:</b> {new Date(formData.startDate).toLocaleString()}
                   </Typography>
                   <Typography>
                     <b>Tipo:</b>{' '}

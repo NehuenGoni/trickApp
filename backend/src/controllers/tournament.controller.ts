@@ -29,6 +29,7 @@ import {
 import { withTransaction } from "../utils/withTransaction";
 import { playerKey, validateRosterPayload } from "../utils/roster";
 import { canManageTournament } from "../utils/tournamentAccess";
+import { applyTournamentUpdate } from "../services/tournamentUpdate";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { consumeTournamentSlot, releaseTournamentSlot, ConsumeSlotResult } from "../services/billing";
 import { PlanId } from "../config/plans";
@@ -89,15 +90,34 @@ const isValidGuestDrawMode = (value: unknown): value is GuestDrawMode =>
  */
 export const resolveTournamentLeague = async (
   rawLeague: unknown,
-  authUser?: { id: string; role: UserRole }
+  authUser?: { id: string; role: UserRole },
+  /**
+   * Liga a la que el torneo pertenece HOY (si la tiene). Solo hace falta para
+   * detectar un desvínculo (`rawLeague` null/"") y exigirle el mismo permiso
+   * que a asignarla — si no, cualquiera con `canManageTournament` (el
+   * creador del torneo) podría sacarlo de una liga que no administra,
+   * alterando sus standings por izquierda.
+   */
+  currentLeague?: mongoose.Types.ObjectId | null
 ): Promise<{ league: mongoose.Types.ObjectId | null } | { error: string; status: number }> => {
   if (rawLeague === null || rawLeague === "") {
+    if (!currentLeague) {
+      return { league: null };
+    }
+    const current = await League.findById(currentLeague).select("createdBy organizers");
+    if (!current) {
+      // La liga actual ya no existe (borrada): no hay nada que proteger, se deja desvincular.
+      return { league: null };
+    }
+    if (!canManageLeague(authUser, current)) {
+      return { error: "No tenés permisos para quitar el torneo de esta liga", status: 403 };
+    }
     return { league: null };
   }
   if (typeof rawLeague !== "string" || !mongoose.isValidObjectId(rawLeague)) {
     return { error: "ID de liga inválido", status: 400 };
   }
-  const league = await League.findById(rawLeague).select("createdBy");
+  const league = await League.findById(rawLeague).select("createdBy organizers");
   if (!league) {
     return { error: "Liga no encontrada", status: 404 };
   }
@@ -372,24 +392,16 @@ export const updateTournament = async (req: AuthRequest, res: Response): Promise
       });
     }
 
-    if (req.body.league !== undefined) {
-      const resolved = await resolveTournamentLeague(req.body.league, req.authUser);
-      if ("error" in resolved) {
-        return void res.status(resolved.status).json({ message: resolved.error });
-      }
-      tournament.league = resolved.league;
+    const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
+    if ("error" in result) {
+      return void res.status(result.status).json({ message: result.error });
     }
 
-    const allowed: Array<keyof ITournament> = ["name", "description", "startDate"];
-    for (const key of allowed) {
-      if (req.body[key] !== undefined) {
-        (tournament as unknown as Record<string, unknown>)[key as string] = req.body[key];
-      }
-    }
     await tournament.save();
     res.status(200).json(tournament);
   } catch (error) {
-    res.status(400).json({ message: "Error al actualizar el torneo", error });
+    const message = error instanceof Error ? error.message : "Error desconocido";
+    res.status(400).json({ message: "Error al actualizar el torneo", error: message });
   }
 };
 

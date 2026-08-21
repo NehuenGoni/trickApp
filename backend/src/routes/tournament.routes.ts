@@ -40,7 +40,7 @@ router.get("/:id/live", getTournamentLive);
 router.get("/:id/logo", getTournamentLogo);
 router.put("/:id/logo", authMiddleware, uploadLogo, uploadTournamentLogo);
 router.delete("/:id/logo", authMiddleware, deleteTournamentLogo);
-router.put("/:id", authMiddleware, updateTournament);
+router.put("/:id", authMiddleware, requireVerifiedEmail, updateTournament);
 router.delete("/:id", authMiddleware, deleteTournament);
 
 router.post("/:id/draw", authMiddleware, drawTournament);
