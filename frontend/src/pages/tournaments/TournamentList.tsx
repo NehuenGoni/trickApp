@@ -39,6 +39,7 @@ interface Tournament {
   description: string;
   startDate: string;
   status: 'upcoming' | 'in_progress' | 'completed';
+  createdBy: string;
   type?: 'grand-slam' | 'master-1000';
   format?: 'duos' | 'trios';
   teamFormationMode?: TeamFormationMode;
@@ -59,7 +60,7 @@ interface Tournament {
 
 const TournamentList = () => {
   const navigate = useNavigate();
-  const { isAdmin } = useCurrentUser();
+  const { user, isAdmin } = useCurrentUser();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -73,9 +74,7 @@ const TournamentList = () => {
 
   const fetchTournaments = async () => {
     try {
-      console.log('Fetching tournaments from:', API_ROUTES.TOURNAMENTS.LIST);
       const data = await apiRequest(API_ROUTES.TOURNAMENTS.LIST);
-      console.log('Received tournaments:', data);
       setTournaments(data);
     } catch (err: any) {
       console.error('Error fetching tournaments:', err);
@@ -287,19 +286,26 @@ const TournamentList = () => {
                     borderColor: 'divider',
                   }}
                 >
-                  <IconButton
-                    title="Editar torneo"
-                    sx={{
-                      color: '#4f49cd',
-                      '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/tournaments/${tournament._id}/edit`);
-                    }}
-                  >
-                    <EditIcon />
-                  </IconButton>
+                  {(isAdmin || tournament.createdBy === user?._id) && (
+                    <IconButton
+                      title={
+                        isAdmin || tournament.status === 'upcoming'
+                          ? 'Editar torneo'
+                          : 'Solo se puede editar un torneo que aún no comenzó'
+                      }
+                      disabled={!isAdmin && tournament.status !== 'upcoming'}
+                      sx={{
+                        color: '#4f49cd',
+                        '&:hover': { backgroundColor: 'rgba(212,175,55,0.15)' },
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/tournaments/${tournament._id}/edit`);
+                      }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                  )}
                   <IconButton
                     title="Eliminar torneo"
                     disabled={!isAdmin && tournament.status === 'completed'}

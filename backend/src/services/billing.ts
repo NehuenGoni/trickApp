@@ -7,6 +7,7 @@ import League from "../models/League";
 import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
 import { withTransaction } from "../utils/withTransaction";
 import { notifyPaymentApproved } from "./notifications";
+import { notifyAdminPaymentApproved } from "./adminAlerts";
 import { EXPIRY_REMINDER_WINDOW_DAYS } from "../config/constants";
 
 export interface EffectiveBilling {
@@ -413,6 +414,17 @@ export const applyProviderSubscriptionCharge = async (params: {
       result.subscription.plan,
       result.subscription.currentPeriodEnd ?? null
     );
+    // Alerta interna al mail del dueño — mismo evento, mismo criterio de "fuera
+    // de la transacción y después del commit". Ver `adminAlerts.ts`.
+    void notifyAdminPaymentApproved({
+      userId: String(result.subscription.userId),
+      subscriptionId: String(result.subscription._id),
+      plan: result.subscription.plan,
+      interval: result.subscription.interval,
+      amount: result.payment.amount,
+      currency: result.payment.currency,
+      currentPeriodEnd: result.subscription.currentPeriodEnd ?? null
+    });
   }
 
   return result;

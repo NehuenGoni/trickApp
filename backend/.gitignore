@@ -22,3 +22,6 @@ yarn-error.log*
 
 # misc
 .DS_Store
+
+# HTML de emails generado por `npm run mail:preview` para revisión local
+/.email-preview
