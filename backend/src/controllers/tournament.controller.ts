@@ -41,6 +41,7 @@ import {
   TournamentStartedEntry,
   TournamentClosedEntry
 } from "../services/notifications";
+import { notifyAdminPlanLimitHit } from "../services/adminAlerts";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -334,6 +335,12 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
     res.status(201).json(tournament);
   } catch (error) {
     if (error instanceof BillingGateError) {
+      void notifyAdminPlanLimitHit({
+        userId: createdBy!,
+        reason: error.reason,
+        plan: error.plan,
+        usage: error.usage
+      });
       return void res.status(402).json({
         message: BILLING_GATE_MESSAGES[error.reason],
         reason: error.reason,

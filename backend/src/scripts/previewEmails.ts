@@ -1,7 +1,8 @@
 /**
- * Genera el HTML de los 13 templates de mail con datos de ejemplo, para
- * revisarlos en el navegador sin mandar nada real. No toca Mongo ni Resend:
- * solo importa `emailTemplates.ts`, así que corre en un segundo.
+ * Genera el HTML de los templates de mail (los 13 de usuarios + las alertas
+ * internas del dueño) con datos de ejemplo, para revisarlos en el navegador
+ * sin mandar nada real. No toca Mongo ni Resend: solo importa
+ * `emailTemplates.ts`/`adminEmailTemplates.ts`, así que corre en un segundo.
  *
  * Uso: `npm run mail:preview` (desde `backend/`). Escribe cada mail a
  * `.email-preview/<nombre>.html` y un `index.html` con la lista completa
@@ -31,6 +32,8 @@ import {
   tournamentSignupConfirmedEmail,
   tournamentStartedEmail
 } from "../utils/emailTemplates";
+import { adminAlertEmail } from "../utils/adminEmailTemplates";
+import { escapeHtml } from "../utils/emailTemplates";
 
 const OUT_DIR = path.join(__dirname, "..", "..", ".email-preview");
 
@@ -60,7 +63,61 @@ const samples: Record<string, MailContent> = {
   "11b-tournament-started-sin-rival": tournamentStartedEmail("Nehuen", "Copa Truco 2026", [], null, TOURNAMENT_URL, UNSUB_URL),
   "12-match-result-ganado": matchResultEmail("Nehuen", "Copa Truco 2026", true, "Cuartos de final", null, TOURNAMENT_URL, UNSUB_URL),
   "12b-match-result-perdido": matchResultEmail("Nehuen", "Copa Truco 2026", false, null, 5, TOURNAMENT_URL, UNSUB_URL),
-  "13-tournament-closed": tournamentClosedEmail("Nehuen", "Copa Truco 2026", 2, 45, TOURNAMENT_URL, UNSUB_URL)
+  "13-tournament-closed": tournamentClosedEmail("Nehuen", "Copa Truco 2026", 2, 45, TOURNAMENT_URL, UNSUB_URL),
+
+  // Alertas internas al mail del dueño (`services/adminAlerts.ts`). El
+  // destinatario es siempre el admin, no el usuario del evento.
+  "14-admin-payment": adminAlertEmail({
+    eyebrow: "Pago",
+    accent: "gold",
+    title: "Nueva suscripción pagada",
+    summaryText: "Nehuen (nehuen@ejemplo.com) se suscribió al plan Pro por $50.000,00.",
+    summaryHtml: "<strong>Nehuen</strong> (nehuen@ejemplo.com) se suscribió al plan <strong>Pro</strong>.",
+    rows: [
+      { label: "Monto", value: "$50.000,00" },
+      { label: "Intervalo", value: "monthly" },
+      { label: "Tipo", value: "Alta nueva" },
+      { label: "Vence el", value: FUTURE.toLocaleDateString("es-AR") }
+    ]
+  }),
+  // A diferencia de los templates de `emailTemplates.ts` (que escapan el
+  // username adentro), `adminAlertEmail` recibe HTML ya seguro: acá se
+  // escapa a mano, igual que tendría que hacerlo cualquier `notifyAdminX`
+  // real en `services/adminAlerts.ts`.
+  "14b-admin-payment-hostil": adminAlertEmail({
+    eyebrow: "Pago",
+    accent: "gold",
+    title: "Renovación cobrada",
+    summaryText: `${HOSTILE_NAME} renovó el plan Club por $30.000,00.`,
+    summaryHtml: `<strong>${escapeHtml(HOSTILE_NAME)}</strong> renovó el plan <strong>Club</strong>.`,
+    rows: [{ label: "Monto", value: "$30.000,00" }]
+  }),
+  "15-admin-error": adminAlertEmail({
+    eyebrow: "Error",
+    accent: "red",
+    title: "Error procesando el webhook de MercadoPago",
+    summaryText: "Se produjo un error: Error procesando el webhook de MercadoPago.",
+    summaryHtml: "Se produjo un error: <strong>Error procesando el webhook de MercadoPago</strong>.",
+    rows: [
+      { label: "type", value: "subscription_authorized_payment" },
+      { label: "dataId", value: "123456789" }
+    ],
+    noticeHtml:
+      '<pre style="margin:0;white-space:pre-wrap;font-family:monospace;font-size:12px;">MercadoPagoError: timeout tras 10000ms\n    at getAuthorizedPayment (services/mercadopago.ts:121)\n    at mercadoPagoWebhook (controllers/billing.controller.ts:259)</pre>'
+  }),
+  "16-admin-limit": adminAlertEmail({
+    eyebrow: "Plan",
+    accent: "blue",
+    title: "Usuario tocó el límite de su plan",
+    summaryText: "Nehuen (nehuen@ejemplo.com) — plan free. Gastó su torneo gratuito (candidato a primera venta).",
+    summaryHtml:
+      "<strong>Nehuen</strong> (nehuen@ejemplo.com) — plan <strong>free</strong>.",
+    rows: [
+      { label: "Motivo", value: "Gastó su torneo gratuito (candidato a primera venta)" },
+      { label: "Torneos este mes", value: "1" },
+      { label: "Torneos totales", value: "1" }
+    ]
+  })
 };
 
 fs.mkdirSync(OUT_DIR, { recursive: true });

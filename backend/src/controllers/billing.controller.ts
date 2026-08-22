@@ -41,6 +41,7 @@ import {
   notifySubscriptionCanceled,
   notifyExpiryReminders
 } from "../services/notifications";
+import { reportCriticalError } from "../services/adminAlerts";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -248,6 +249,10 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
       // Casi siempre es `MP_WEBHOOK_SECRET` desincronizado con el panel de MP
       // (o la clave de otra aplicación). Sin este log, el rechazo es mudo.
       console.warn(`[webhook:mp] firma inválida — type=${type} data.id=${dataId}`);
+      reportCriticalError("webhook:mp:signature", "Firma inválida en el webhook de MercadoPago", null, {
+        type: type ?? "(sin type)",
+        dataId: dataId ?? "(sin id)"
+      });
       res.status(401).json({ message: "Firma inválida" });
       return;
     }
@@ -297,6 +302,10 @@ export const mercadoPagoWebhook = async (req: Request, res: Response): Promise<v
     // El resto sí puede ser transitorio (MP caído, timeout, Mongo): devolvemos
     // 500 a propósito para que MP reintente.
     console.error(`[webhook:mp] error procesando el evento — type=${type} data.id=${dataId}:`, error);
+    reportCriticalError("webhook:mp:error", "Error procesando el webhook de MercadoPago", error, {
+      type: type ?? "(sin type)",
+      dataId: dataId ?? "(sin id)"
+    });
     res.status(500).json({ message: "Error al procesar el webhook", error: error.message });
   }
 };
@@ -329,6 +338,7 @@ export const reconcilePendingSubscriptionsCron = async (req: Request, res: Respo
 
     res.status(200).json({ ...result, remindersSent });
   } catch (error: any) {
+    reportCriticalError("cron:reconcile", "Error en el cron de reconciliación de suscripciones", error);
     res.status(500).json({ message: "Error al reconciliar suscripciones pendientes", error: error.message });
   }
 };

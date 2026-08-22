@@ -45,7 +45,7 @@ const buildUnsubscribeUrl = (userId: unknown, pref: UnsubscribablePref): string 
   buildUrl(`/unsubscribe/${signUnsubscribeToken(String(userId), pref)}`);
 
 /** Trae `{ email, username, notificationPrefs }` de un solo usuario a partir de su id. */
-const resolveUser = async (userId: string): Promise<NotifiableUser | null> => {
+export const resolveUser = async (userId: string): Promise<NotifiableUser | null> => {
   try {
     return await User.findById(userId).select("email username notificationPrefs").lean();
   } catch (error) {

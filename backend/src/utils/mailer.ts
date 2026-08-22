@@ -40,6 +40,19 @@ const getClient = (): Resend => {
 const getFrom = (): string => process.env.MAIL_FROM || "TrickApp <no-reply@trick-app.com>";
 const getReplyTo = (): string | undefined => process.env.MAIL_REPLY_TO || undefined;
 
+/**
+ * Handler inyectado (no importado) para avisar de un envío fallido sin que
+ * este módulo, que es la capa más baja de mail, dependa de `adminAlerts.ts`
+ * (que a su vez depende de este archivo para poder mandar la alerta). Lo
+ * registra `adminAlerts.ts` al cargarse; ese mismo módulo es responsable de
+ * cortar la recursión si el destinatario fallido es justamente un admin.
+ */
+let onSendFailure: ((to: string, subject: string, error: unknown) => void) | null = null;
+
+export const setMailFailureHandler = (fn: typeof onSendFailure): void => {
+  onSendFailure = fn;
+};
+
 export const sendMail = async ({ to, subject, text, html }: MailPayload): Promise<boolean> => {
   if (!isMailConfigured()) {
     console.warn(
@@ -60,11 +73,13 @@ export const sendMail = async ({ to, subject, text, html }: MailPayload): Promis
     });
     if (error) {
       console.error(`[mailer] Error enviando mail a ${to}:`, error);
+      onSendFailure?.(to, subject, error);
       return false;
     }
     return true;
   } catch (error) {
     console.error(`[mailer] Error enviando mail a ${to}:`, error);
+    onSendFailure?.(to, subject, error);
     return false;
   }
 };
@@ -112,11 +127,13 @@ export const sendMailBatch = async (payloads: MailPayload[]): Promise<number> =>
       );
       if (error) {
         console.error(`[mailer] Error enviando batch de ${batch.length} mail(es):`, error);
+        onSendFailure?.(batch.map((p) => p.to).join(", "), `batch (${batch.length})`, error);
         continue;
       }
       sent += data?.data.length ?? batch.length;
     } catch (error) {
       console.error(`[mailer] Error enviando batch de ${batch.length} mail(es):`, error);
+      onSendFailure?.(batch.map((p) => p.to).join(", "), `batch (${batch.length})`, error);
     }
   }
 
