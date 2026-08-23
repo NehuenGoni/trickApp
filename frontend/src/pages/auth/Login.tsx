@@ -99,7 +99,6 @@ const Login = () => {
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, width: '100%' }}>
             <TextField
               margin="normal"
-              required
               fullWidth
               id="email"
               label="Email"
@@ -113,7 +112,6 @@ const Login = () => {
             />
             <TextField
               margin="normal"
-              required
               fullWidth
               name="password"
               label="Contraseña"

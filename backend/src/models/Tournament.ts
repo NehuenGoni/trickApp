@@ -219,6 +219,9 @@ const tournamentSchema = new Schema<ITournament>(
 // Es exactamente la query que arma la tabla de posiciones de una liga
 // (computeLeagueStandings): todos los torneos completados de una liga.
 tournamentSchema.index({ league: 1, status: 1 });
+// Trayectoria en torneos de un jugador (utils/userStats): torneos completados
+// donde participó. Multikey, igual que el índice análogo en Match.
+tournamentSchema.index({ "playerStats.playerId": 1, status: 1 });
 
 const TournamentModel = model<ITournament>("Tournament", tournamentSchema);
 

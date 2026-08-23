@@ -161,3 +161,14 @@ export const SLOT_TO_POSITION = {
   M78_WINNER: 7,
   M78_LOSER: 8
 } as const;
+
+/**
+ * Estadísticas de usuario (utils/userStats.ts). Con menos partidos juntos el
+ * winRate de un compañero/rival solo puede dar 0/50/100%: ruido puro, no señal.
+ */
+export const USER_STATS_MIN_PLAYED_TOGETHER = 3;
+export const USER_STATS_TOP_PEERS = 20;
+/** Techo de partidos escaneados por request; ver meta.truncated. */
+export const USER_STATS_MAX_MATCHES_SCAN = 2000;
+export const USER_STATS_ACTIVITY_MONTHS = 12;
+export const USER_STATS_RECENT_FORM = 10;

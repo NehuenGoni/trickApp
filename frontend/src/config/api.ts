@@ -14,7 +14,8 @@ const API_ROUTES = {
   USERS: {
     LIST: `${API_BASE_URL}/users`,
     DETAIL: (id: string) => `${API_BASE_URL}/users/${id}`,
-    STATS:  (id: any) => `${API_BASE_URL}/users/${id}/stats`,
+    STATS:  (id: string) => `${API_BASE_URL}/users/${id}/stats`,
+    STATS_SUMMARY: (id: string) => `${API_BASE_URL}/users/${id}/stats/summary`,
     MATCHESLENGTH: (id: any) => `${API_BASE_URL}/users/${id}/matches-length`,
     GETNAMES: (id: any) => `${API_BASE_URL}/users/matchesNames/${id}`,
     SEARCH: (query: string) => `${API_BASE_URL}/users/search?query=${query}`,

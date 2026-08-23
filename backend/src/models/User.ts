@@ -126,6 +126,8 @@ const userSchema = new mongoose.Schema<IUser>({
 }, { timestamps: true });
 
 userSchema.index({ "billing.currentPeriodEnd": 1 });
+// Ranking global (adminTournament.getAdminStats) y userStats.globalRank.
+userSchema.index({ totalPoints: -1 });
 
 userSchema.pre("save", async function (next) {
   const user = this as mongoose.Document & IUser;

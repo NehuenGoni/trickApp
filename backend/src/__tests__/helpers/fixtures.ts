@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import request from "supertest";
 import app from "../../app";
 import User, { UserRole } from "../../models/User";
+import Match, { IMatch } from "../../models/Match";
 import { ROLES } from "../../config/constants";
 
 /**
@@ -139,4 +140,59 @@ export const playFullBracket = async (fixture: FullTournamentResult): Promise<vo
       throw new Error(`No se pudo finalizar ${slot}: ${result.status} ${JSON.stringify(result.body)}`);
     }
   }
+};
+
+export interface FixturePlayer {
+  playerId?: string;
+  username?: string;
+  isGuest?: boolean;
+}
+
+/**
+ * Crea un `Match` directamente en Mongo (sin pasar por los endpoints), para
+ * los tests de `utils/userStats.ts` que necesitan controlar `winner`,
+ * `score` y `createdAt` con precisión. `winner` decide el equipo ganador por
+ * su letra ('A' o 'B'); si se omite, el match queda sin winner (para probar
+ * `discardedMatches`).
+ */
+export const createFinishedMatch = async (opts: {
+  teamAPlayers: FixturePlayer[];
+  teamBPlayers: FixturePlayer[];
+  scoreA?: number;
+  scoreB?: number;
+  winner?: "A" | "B";
+  status?: "finished" | "in_progress" | "pending";
+  type?: "friendly" | "tournament";
+  createdAt?: Date;
+}): Promise<IMatch> => {
+  const teamAId = new mongoose.Types.ObjectId();
+  const teamBId = new mongoose.Types.ObjectId();
+
+  const toMatchPlayers = (players: FixturePlayer[]) =>
+    players.map((p) => ({
+      playerId: p.playerId ? new mongoose.Types.ObjectId(p.playerId) : undefined,
+      username: p.username ?? (p.playerId ? undefined : "Invitado"),
+      isGuest: p.isGuest ?? !p.playerId
+    }));
+
+  const match = await Match.create({
+    teams: [
+      { teamId: teamAId, score: opts.scoreA ?? 0, players: toMatchPlayers(opts.teamAPlayers) },
+      { teamId: teamBId, score: opts.scoreB ?? 0, players: toMatchPlayers(opts.teamBPlayers) }
+    ],
+    winner: opts.winner === "A" ? teamAId : opts.winner === "B" ? teamBId : undefined,
+    status: opts.status ?? "finished",
+    type: opts.type ?? "friendly",
+    createdAt: opts.createdAt ?? new Date()
+  });
+
+  // createdAt tiene `default: Date.now` en el schema y `timestamps: true` lo
+  // pisa al guardar; forzarlo con una segunda escritura si se pidió una fecha
+  // específica (necesario para los tests de rachas/actividad).
+  if (opts.createdAt) {
+    await Match.updateOne({ _id: match._id }, { $set: { createdAt: opts.createdAt } });
+    match.createdAt = opts.createdAt;
+  }
+
+  return match;
 };

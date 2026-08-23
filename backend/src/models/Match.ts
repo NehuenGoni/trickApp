@@ -87,6 +87,10 @@ const MatchSchema = new Schema<IMatch>(
 
 MatchSchema.index({ status: 1 });
 MatchSchema.index({ tournament: 1, bracketSlot: 1, status: 1 });
+// Historial y estadísticas de un jugador (user.controller/getUserMatches,
+// utils/userStats): sin este índice cada consulta es un COLLSCAN completo
+// de la colección. Multikey porque playerId vive dentro de un array anidado.
+MatchSchema.index({ "teams.players.playerId": 1, createdAt: -1 });
 
 const Match = mongoose.model<IMatch>("Match", MatchSchema, "matches");
 
