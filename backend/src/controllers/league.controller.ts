@@ -6,6 +6,13 @@ import TournamentModel from "../models/Tournament";
 import User from "../models/User";
 import { canManageLeague, canManageLeagues } from "../utils/leaguePermissions";
 import { computeLeagueStandings } from "../utils/leagueStandings";
+import {
+  collectPlayerIdentities,
+  computeLeaguePlayerCounts,
+  tournamentParticipants,
+  TOURNAMENT_PLAYER_FIELDS
+} from "../utils/leaguePlayers";
+import { enforceLeagueCap } from "../services/leagueCapGate";
 import { withTransaction } from "../utils/withTransaction";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { PLANS } from "../config/plans";
@@ -82,26 +89,48 @@ export const getLeagues = async (req: Request, res: Response): Promise<void> => 
     const filter = includeInactive ? {} : { isActive: true };
 
     const leagues = await League.find(filter).sort({ startDate: -1 }).lean();
+    const leagueIds = leagues.map((l) => l._id);
 
-    // Contadores por liga con una sola query, agrupada en JS: el volumen de
-    // torneos-con-liga no justifica una aggregation pipeline.
-    const tournamentsByLeague = await TournamentModel.find({ league: { $ne: null } })
-      .select("league status")
+    // Contadores por liga con una sola query, acotada a las ligas devueltas y
+    // agrupada en JS: el volumen de torneos-con-liga no justifica una
+    // aggregation pipeline. Trae también los campos de jugadores para no
+    // pagar una segunda query — un solo loop calcula torneos, finalizados y
+    // participantes únicos a la vez.
+    const tournamentsByLeague = await TournamentModel.find({ league: { $in: leagueIds } })
+      .select(`status ${TOURNAMENT_PLAYER_FIELDS}`)
       .lean();
     const counts = new Map<string, { tournamentCount: number; completedCount: number }>();
+    const identitiesByLeague = new Map<string, Map<string, boolean>>();
     for (const t of tournamentsByLeague) {
       if (!t.league) continue;
       const key = t.league.toString();
+
       const entry = counts.get(key) ?? { tournamentCount: 0, completedCount: 0 };
       entry.tournamentCount += 1;
       if (t.status === "completed") entry.completedCount += 1;
       counts.set(key, entry);
+
+      let identities = identitiesByLeague.get(key);
+      if (!identities) {
+        identities = new Map();
+        identitiesByLeague.set(key, identities);
+      }
+      for (const [identityKey, isGuest] of collectPlayerIdentities(t)) identities.set(identityKey, isGuest);
     }
 
-    const result = leagues.map((league) => ({
-      ...league,
-      ...(counts.get(league._id.toString()) ?? { tournamentCount: 0, completedCount: 0 })
-    }));
+    const result = leagues.map((league) => {
+      const leagueKey = league._id.toString();
+      const identities = identitiesByLeague.get(leagueKey);
+      const guestCount = identities ? [...identities.values()].filter(Boolean).length : 0;
+      const playerCount = identities?.size ?? 0;
+      return {
+        ...league,
+        ...(counts.get(leagueKey) ?? { tournamentCount: 0, completedCount: 0 }),
+        playerCount,
+        registeredCount: playerCount - guestCount,
+        guestCount
+      };
+    });
 
     res.status(200).json(result);
   } catch (error: any) {
@@ -123,14 +152,20 @@ export const getLeagueById = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const [tournaments, standingsResult] = await Promise.all([
+    const [tournaments, standingsResult, playerCountsByLeague] = await Promise.all([
       TournamentModel.find({ league: id }).select(TOURNAMENT_SUMMARY_FIELDS).sort({ startDate: -1 }),
-      computeLeagueStandings(id)
+      computeLeagueStandings(id),
+      computeLeaguePlayerCounts([id])
     ]);
+    // `guestCount` de standingsResult son invitados EN LA TABLA DE POSICIONES
+    // (solo torneos completados); `playerCounts` cuenta participantes de
+    // CUALQUIER torneo de la liga. Son cosas distintas, no se pisan.
+    const playerCounts = playerCountsByLeague.get(id) ?? { playerCount: 0, registeredCount: 0, guestCount: 0 };
 
     res.status(200).json({
       league,
       tournaments,
+      playerCounts,
       standings: standingsResult.standings,
       tournamentsCounted: standingsResult.tournamentsCounted,
       guestCount: standingsResult.guestCount
@@ -368,6 +403,19 @@ export const attachTournament = async (req: Request, res: Response): Promise<voi
 
     if (tournament.league?.toString() === id) {
       res.status(200).json({ message: "El torneo ya está en esta liga", tournament });
+      return;
+    }
+
+    // Vincular un torneo que ya tiene jugadores puede sumarle de golpe todos
+    // sus participantes a la liga — mismo chequeo que hace `applyTournamentUpdate`
+    // cuando la liga se cambia desde la edición del torneo (ver `leagueCapGate.ts`).
+    const capDenial = await enforceLeagueCap(
+      league._id as mongoose.Types.ObjectId,
+      tournamentParticipants(tournament),
+      req.authUser!.id
+    );
+    if (capDenial) {
+      res.status(402).json(capDenial);
       return;
     }
 

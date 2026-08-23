@@ -13,6 +13,8 @@ import {
   awardTournamentPoints,
   revertTournamentPoints
 } from "../controllers/tournament.controller";
+import { enforceLeagueCap } from "./leagueCapGate";
+import { tournamentParticipants } from "../utils/leaguePlayers";
 
 interface UpdateActor {
   id: string;
@@ -30,7 +32,18 @@ export interface TournamentUpdateBody {
   league?: string | null;
 }
 
-type UpdateResult = { error: string; status: number } | { recalculated: boolean };
+type UpdateResult =
+  | {
+      error: string;
+      status: number;
+      /** Presentes solo cuando el error es un 402 de cupo de liga — ver `services/leagueCapGate.ts`. */
+      reason?: string;
+      plan?: string;
+      limit?: number;
+      current?: number;
+      canUpgrade?: boolean;
+    }
+  | { recalculated: boolean };
 
 /**
  * PUNTO ÚNICO de la lógica de edición de un torneo: campos permitidos,
@@ -52,10 +65,36 @@ export const applyTournamentUpdate = async (
   const { name, description, startDate, type, format, teamFormationMode, guestDrawMode, league } = body;
 
   if (league !== undefined) {
-    const resolved = await resolveTournamentLeague(league, authUser, tournament.league ?? null);
+    const previousLeague = tournament.league ?? null;
+    const resolved = await resolveTournamentLeague(league, authUser, previousLeague);
     if ("error" in resolved) {
       return { error: resolved.error, status: resolved.status };
     }
+
+    // Vincular a una liga NUEVA (no desvincular, no "misma liga de siempre")
+    // puede sumarle de golpe todos los participantes del torneo — es el
+    // vector más grande de altas, porque no pasa por ningún handler de
+    // inscripción. Se valida solo en ese caso: desvincular nunca reduce el
+    // conteo de nadie, y no tiene sentido bloquearlo.
+    const isNewLeague = resolved.league && resolved.league.toString() !== previousLeague?.toString();
+    if (isNewLeague) {
+      // Todos los participantes actuales del torneo son "nuevos" para la
+      // liga destino — `enforceLeagueCap` deduplica contra los que ya
+      // jugaban ahí, así que solo cuentan los realmente nuevos.
+      const capDenial = await enforceLeagueCap(resolved.league, tournamentParticipants(tournament), authUser?.id ?? "");
+      if (capDenial) {
+        return {
+          error: capDenial.message,
+          status: 402,
+          reason: capDenial.reason,
+          plan: capDenial.plan,
+          limit: capDenial.limit,
+          current: capDenial.current,
+          canUpgrade: capDenial.canUpgrade
+        };
+      }
+    }
+
     tournament.league = resolved.league;
   }
 

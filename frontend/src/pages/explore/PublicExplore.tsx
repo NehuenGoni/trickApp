@@ -153,7 +153,8 @@ const PublicExplore = () => {
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                           {formatDate(l.startDate)} · {l.tournamentCount}{' '}
-                          {l.tournamentCount === 1 ? 'torneo' : 'torneos'}
+                          {l.tournamentCount === 1 ? 'torneo' : 'torneos'} · {l.playerCount}{' '}
+                          {l.playerCount === 1 ? 'jugador' : 'jugadores'}
                         </Typography>
                       </SurfaceCard>
                     </Reveal>

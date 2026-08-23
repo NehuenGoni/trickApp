@@ -9,6 +9,7 @@ export interface NotificationPrefs {
   tournamentResults: boolean;
   matchResults: boolean;
   leagueRoles: boolean;
+  leagueCapReached: boolean;
 }
 
 export interface CurrentUser {

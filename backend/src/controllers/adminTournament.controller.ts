@@ -89,7 +89,10 @@ export const updateTournament = async (req: Request, res: Response): Promise<voi
 
     const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
     if ("error" in result) {
-      return void res.status(result.status).json({ message: result.error });
+      // Campos extra (reason/plan/limit/current/canUpgrade) solo están
+      // presentes en el 402 de cupo de liga — ver `services/leagueCapGate.ts`.
+      const { error, status, ...extra } = result;
+      return void res.status(status).json({ message: error, ...extra });
     }
 
     await tournament.save();

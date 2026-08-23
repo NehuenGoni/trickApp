@@ -402,6 +402,52 @@ export const organizerAddedEmail = (username: string, leagueName: string, league
   };
 };
 
+/**
+ * Al dueño de una liga, cuando alguien no pudo anotarse porque se llegó al
+ * cupo de jugadores del plan. Solo se dispara cuando el que rebota NO es el
+ * propio dueño (si fue él, ya vio el error en pantalla) — ver
+ * `services/leagueCapGate.ts`.
+ */
+export const leagueCapReachedEmail = (
+  username: string,
+  leagueName: string,
+  current: number,
+  limit: number,
+  planLabel: string,
+  leagueUrl: string,
+  plansUrl: string,
+  unsubscribeUrl: string
+): MailContent => {
+  const safeName = escapeHtml(username);
+  const safeLeague = escapeHtml(leagueName);
+  const safePlan = escapeHtml(planLabel);
+  return {
+    subject: `${APP_NAME} - Tu liga "${leagueName}" llegó al cupo de jugadores`,
+    text:
+      `Hola ${username},\n\n` +
+      `Alguien intentó anotarse en tu liga "${leagueName}" pero no pudo: ya tenés ${current} de ${limit} jugadores, ` +
+      `el cupo de tu plan ${planLabel}.\n\n` +
+      `Pasate a un plan superior para seguir sumando gente:\n${plansUrl}\n\n` +
+      `Ver la liga: ${leagueUrl}`,
+    html: layout({
+      preheader: `Ya tenés ${current} de ${limit} jugadores en "${leagueName}" — el cupo de tu plan ${planLabel}.`,
+      eyebrow: "Liga",
+      accent: "gold",
+      title: "Tu liga llegó al cupo de jugadores",
+      bodyHtml:
+        paragraph(`Hola <strong>${safeName}</strong>,`) +
+        paragraph(
+          `Alguien intentó anotarse en tu liga <strong>${safeLeague}</strong> pero no pudo: ya tenés ` +
+          `<strong>${current} de ${limit}</strong> jugadores, el cupo de tu plan <strong>${safePlan}</strong>.`
+        ) +
+        notice(`Pasate a un plan superior para destrabar el resto de los cupos, o <a href="${leagueUrl}" style="color:${COLORS.TEXT_MUTED};">gestioná la liga</a>.`),
+      ctaUrl: plansUrl,
+      ctaLabel: "Ver planes",
+      unsubscribeUrl
+    })
+  };
+};
+
 export const tournamentSignupConfirmedEmail = (username: string, tournamentName: string, tournamentUrl: string, unsubscribeUrl: string): MailContent => {
   const safeName = escapeHtml(username);
   const safeTournament = escapeHtml(tournamentName);

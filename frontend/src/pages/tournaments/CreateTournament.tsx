@@ -19,6 +19,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
+import { PlanLimitPage } from '../../components/PlanLimitAlert';
 import LogoUploader from '../../components/LogoUploader';
 import API_ROUTES, { apiRequest, PaymentRequiredError, EmailNotVerifiedError } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
@@ -249,21 +250,14 @@ const CreateTournament = () => {
     return (
       <Box>
         <NavBar />
-        <Container maxWidth="sm" sx={{ mt: 4 }}>
-          <SurfaceCard sx={{ textAlign: 'center' }}>
-            <Typography variant="h5" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
-              {outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
-              {outOfFreeSlot
-                ? 'El plan gratuito incluye un torneo, de por vida. Elegí un plan para seguir creando torneos.'
-                : 'Ya usaste los torneos de este mes en tu plan actual. Pasate a un plan superior o esperá al próximo período.'}
-            </Typography>
-            <Button variant="contained" onClick={() => navigate('/planes')}>
-              Ver planes
-            </Button>
-          </SurfaceCard>
-        </Container>
+        <PlanLimitPage
+          title={outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
+          message={
+            outOfFreeSlot
+              ? 'El plan gratuito incluye un torneo, de por vida. Elegí un plan para seguir creando torneos.'
+              : 'Ya usaste los torneos de este mes en tu plan actual. Pasate a un plan superior o esperá al próximo período.'
+          }
+        />
       </Box>
     );
   }

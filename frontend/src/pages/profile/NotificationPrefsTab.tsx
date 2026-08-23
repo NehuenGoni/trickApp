@@ -30,6 +30,11 @@ const PREF_ITEMS: Array<{ key: keyof NotificationPrefs; label: string; descripti
     key: 'leagueRoles',
     label: 'Organizador de liga',
     description: 'Cuando te designan organizador de una liga.'
+  },
+  {
+    key: 'leagueCapReached',
+    label: 'Cupo de liga completo',
+    description: 'Cuando alguien no puede anotarse a tu liga porque llegaste al cupo de jugadores de tu plan.'
   }
 ];
 

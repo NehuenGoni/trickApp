@@ -10,7 +10,9 @@ import {
   CircularProgress,
   Alert
 } from '@mui/material';
-import API_ROUTES, { apiRequest } from '../config/api';
+import API_ROUTES, { apiRequest, PaymentRequiredError } from '../config/api';
+import { clearBillingCache } from '../hooks/useBilling';
+import PlanLimitAlert from './PlanLimitAlert';
 
 interface PickerTournament {
   _id: string;
@@ -46,10 +48,15 @@ const LeagueTournamentPicker: React.FC<LeagueTournamentPickerProps> = ({
   const [selected, setSelected] = useState<PickerTournament | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // 402 de cupo de liga: vincular un torneo con jugadores puede sumar de
+  // golpe a toda su gente (ver `enforceLeagueCap` en `attachTournament`,
+  // backend). Aparte del error genérico porque necesita `canUpgrade`.
+  const [planLimitError, setPlanLimitError] = useState<{ message: string; canUpgrade: boolean } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setError('');
+    setPlanLimitError(null);
     setSelected(null);
     setLoading(true);
     (async () => {
@@ -68,6 +75,7 @@ const LeagueTournamentPicker: React.FC<LeagueTournamentPickerProps> = ({
     if (!selected) return;
     setSaving(true);
     setError('');
+    setPlanLimitError(null);
     try {
       await apiRequest(API_ROUTES.LEAGUES.LEAGUE_TOURNAMENT(leagueId, selected._id), {
         method: 'PUT'
@@ -75,6 +83,11 @@ const LeagueTournamentPicker: React.FC<LeagueTournamentPickerProps> = ({
       onAdded();
       onClose();
     } catch (err) {
+      if (err instanceof PaymentRequiredError && err.reason === 'league_member_limit_reached') {
+        clearBillingCache();
+        setPlanLimitError({ message: err.message, canUpgrade: !!err.canUpgrade });
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Error al agregar el torneo a la liga');
     } finally {
       setSaving(false);
@@ -86,6 +99,14 @@ const LeagueTournamentPicker: React.FC<LeagueTournamentPickerProps> = ({
       <DialogTitle>Agregar torneo a la liga</DialogTitle>
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {planLimitError && (
+          <PlanLimitAlert
+            sx={{ mb: 2 }}
+            severity="error"
+            message={planLimitError.message}
+            canUpgrade={planLimitError.canUpgrade}
+          />
+        )}
         {loading ? (
           <CircularProgress size={24} />
         ) : (

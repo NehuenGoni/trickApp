@@ -35,10 +35,12 @@ import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
 import TeamRosterEditor, { RosterTeam, RosterPlayer } from '../../components/TeamRosterEditor';
+import PlanLimitAlert from '../../components/PlanLimitAlert';
 import useCurrentUser from '../../hooks/useCurrentUser';
+import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import { TournamentLogoMeta, TeamFormationMode, poolBasedMode } from '../../types/tournament';
 import { LeagueRef } from '../../types/league';
-import API_ROUTES, { apiRequest } from '../../config/api';
+import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
 import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch, playerKey } from '../../utils/tournament';
 
 interface PlayerLite {
@@ -126,12 +128,17 @@ const TournamentDetails = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
-  const { isAdmin } = useCurrentUser();
+  const { user, isAdmin } = useCurrentUser();
+  const { billing } = useBilling();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  // Cupo de liga alcanzado (402, `league_member_limit_reached`): se muestra
+  // aparte del error genérico porque necesita el CTA condicional a "Ver
+  // planes" (`canUpgrade`), que un string suelto no puede cargar.
+  const [planLimitError, setPlanLimitError] = useState<{ message: string; canUpgrade: boolean } | null>(null);
   const currentUserId = localStorage.getItem('userId') || '';
   const [logoOpen, setLogoOpen] = useState(false);
 
@@ -173,6 +180,11 @@ const TournamentDetails = () => {
   const [searchingCreatorPlayer, setSearchingCreatorPlayer] = useState(false);
   const [creatorGuestNameInput, setCreatorGuestNameInput] = useState('');
   const [creatorGuestNames, setCreatorGuestNames] = useState<string[]>([]);
+  // Cupo de LIGA disponible (distinto del cupo del torneo): solo tiene
+  // sentido mostrarlo cuando el que mira es el dueño del plan — es su cupo,
+  // no el de un organizador cualquiera. Se pide al abrir el diálogo, no en
+  // cada tecla.
+  const [leagueCapHint, setLeagueCapHint] = useState<{ current: number; limit: number } | null>(null);
 
   const [startOpen, setStartOpen] = useState(false);
   const [startMode, setStartMode] = useState<'random' | 'manual' | null>(null);
@@ -235,6 +247,30 @@ const TournamentDetails = () => {
     const t = setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350);
     return () => clearTimeout(t);
   }, [focusMatchId]);
+
+  // Cupo de la liga (distinto del cupo del torneo, que ya se muestra arriba):
+  // se pide al abrir el diálogo de alta, y solo si tiene sentido — torneo
+  // ligado a una liga, plan con tope y el que mira es el dueño de esa liga
+  // (mismo criterio que el bloque de plan de LeagueDetails).
+  useEffect(() => {
+    if (!creatorAddPlayerOpen || !tournament?.league || billing?.limits.maxMembers == null) {
+      setLeagueCapHint(null);
+      return;
+    }
+    let active = true;
+    apiRequest(API_ROUTES.LEAGUES.DETAIL(tournament.league._id))
+      .then((data) => {
+        if (!active) return;
+        if (data?.league?.createdBy !== user?._id) return; // no es el dueño: no le corresponde ver esto
+        setLeagueCapHint({ current: data.playerCounts.playerCount, limit: billing.limits.maxMembers as number });
+      })
+      .catch(() => {
+        /* hint puramente informativo: si falla, simplemente no se muestra */
+      });
+    return () => {
+      active = false;
+    };
+  }, [creatorAddPlayerOpen, tournament?.league, billing, user?._id]);
 
   const isCreator = !!tournament && tournament.createdBy === currentUserId;
   const teamSize = tournament ? TEAM_SIZE[tournament.format] : 2;
@@ -331,6 +367,22 @@ const TournamentDetails = () => {
   const creatorAddPlayerCount = creatorSelectedPlayers.length + creatorGuestNames.length;
   const creatorAddPlayerFull = creatorAddPlayerCount >= remainingSlots;
 
+  /**
+   * Catch compartido por los 4 handlers que agregan gente al torneo: si el
+   * 402 es por cupo de liga, se muestra con `PlanLimitAlert` (necesita el
+   * `canUpgrade` que trae el backend); cualquier otro error sigue el camino
+   * genérico de siempre.
+   */
+  const handleAddPlayersError = (err: unknown, fallbackMessage: string) => {
+    if (err instanceof PaymentRequiredError && err.reason === 'league_member_limit_reached') {
+      clearBillingCache(); // el uso cambió (o el organizador quiere ver el estado real en "Mi Plan")
+      setPlanLimitError({ message: err.message, canUpgrade: !!err.canUpgrade });
+      return;
+    }
+    const e = err as { message?: string };
+    setError(e.message || fallbackMessage);
+  };
+
   const searchUsers = async (q: string) => {
     if (!q.trim()) {
       setUserOptions([]);
@@ -350,6 +402,7 @@ const TournamentDetails = () => {
   const handleRegister = async () => {
     if (!tournament || !id) return;
     setError('');
+    setPlanLimitError(null);
     try {
       if (poolBasedMode(tournament.teamFormationMode)) {
         await apiRequest(API_ROUTES.TOURNAMENTS.REGISTER(id), { method: 'POST' });
@@ -377,8 +430,7 @@ const TournamentDetails = () => {
       setInfo('Inscripción registrada');
       fetchData();
     } catch (err) {
-      const e = err as { message?: string };
-      setError(e.message || 'Error en la inscripción');
+      handleAddPlayersError(err, 'Error en la inscripción');
     }
   };
 
@@ -404,6 +456,7 @@ const TournamentDetails = () => {
       setError(`Necesitás ${teamSize} nombres de invitados`);
       return;
     }
+    setPlanLimitError(null);
     try {
       await apiRequest(API_ROUTES.TOURNAMENTS.ADD_GUEST_TEAM(id), {
         method: 'POST',
@@ -420,8 +473,7 @@ const TournamentDetails = () => {
       setInfo('Equipo de invitados agregado');
       fetchData();
     } catch (err) {
-      const e = err as { message?: string };
-      setError(e.message || 'Error al agregar equipo de invitados');
+      handleAddPlayersError(err, 'Error al agregar equipo de invitados');
     }
   };
 
@@ -441,6 +493,7 @@ const TournamentDetails = () => {
   const handleCreatorAddTeam = async () => {
     if (!id || !tournament) return;
     setError('');
+    setPlanLimitError(null);
     const registeredIds = creatorAddTeamMembers.map((m) => m._id);
     const guestList = creatorAddTeamGuests.filter((g) => g.trim());
     if (!creatorAddTeamName.trim()) { setError('Ingresá un nombre de equipo'); return; }
@@ -466,8 +519,7 @@ const TournamentDetails = () => {
       setInfo('Equipo agregado');
       fetchData();
     } catch (err) {
-      const e = err as { message?: string };
-      setError(e.message || 'Error al agregar el equipo');
+      handleAddPlayersError(err, 'Error al agregar el equipo');
     }
   };
 
@@ -510,6 +562,7 @@ const TournamentDetails = () => {
       ...guestNames
     ];
     setError('');
+    setPlanLimitError(null);
     try {
       await apiRequest(API_ROUTES.TOURNAMENTS.SIGNUP_ADMIN(id), {
         method: 'POST',
@@ -530,8 +583,7 @@ const TournamentDetails = () => {
       );
       fetchData();
     } catch (err) {
-      const e = err as { message?: string };
-      setError(e.message || 'Error al inscribir el jugador');
+      handleAddPlayersError(err, 'Error al inscribir el jugador');
     }
   };
 
@@ -838,6 +890,14 @@ const TournamentDetails = () => {
           </Box>
 
           {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+          {planLimitError && (
+            <PlanLimitAlert
+              sx={{ mb: 2 }}
+              severity="error"
+              message={planLimitError.message}
+              canUpgrade={planLimitError.canUpgrade}
+            />
+          )}
           {info && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setInfo('')}>{info}</Alert>}
 
           <Box sx={{ mb: 3 }}>
@@ -1364,6 +1424,18 @@ const TournamentDetails = () => {
                 ? 'Llegaste al cupo del torneo: no podés agregar más jugadores ni invitados.'
                 : `Cupos disponibles: ${remainingSlots - creatorAddPlayerCount} de ${remainingSlots}`}
             </Typography>
+            {leagueCapHint && (
+              <Typography
+                variant="body2"
+                color={leagueCapHint.current >= leagueCapHint.limit ? 'error' : 'text.secondary'}
+                sx={{ mb: 1 }}
+              >
+                Cupo de la liga: {leagueCapHint.current} de {leagueCapHint.limit} jugadores
+                {leagueCapHint.current >= leagueCapHint.limit
+                  ? ' — llegaste al tope de tu plan, esta alta puede rebotar'
+                  : ''}
+              </Typography>
+            )}
             <Autocomplete
               multiple
               options={creatorPlayerOptions}

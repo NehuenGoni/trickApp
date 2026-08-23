@@ -32,6 +32,8 @@ import { canManageTournament } from "../utils/tournamentAccess";
 import { applyTournamentUpdate } from "../services/tournamentUpdate";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { consumeTournamentSlot, releaseTournamentSlot, ConsumeSlotResult } from "../services/billing";
+import { enforceLeagueCap } from "../services/leagueCapGate";
+import { IdentifiablePlayer } from "../utils/playerIdentity";
 import { PlanId } from "../config/plans";
 import {
   notifyTournamentSignup,
@@ -401,7 +403,10 @@ export const updateTournament = async (req: AuthRequest, res: Response): Promise
 
     const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
     if ("error" in result) {
-      return void res.status(result.status).json({ message: result.error });
+      // Campos extra (reason/plan/limit/current/canUpgrade) solo están
+      // presentes en el 402 de cupo de liga — ver `services/leagueCapGate.ts`.
+      const { error, status, ...extra } = result;
+      return void res.status(status).json({ message: error, ...extra });
     }
 
     await tournament.save();
@@ -481,6 +486,16 @@ export const createTeamInTournament = async (req: AuthRequest, res: Response): P
         }
       }
     }
+
+    const newPlayers: IdentifiablePlayer[] = members.map(
+      (member: { playerId?: string; name: string; isGuest?: boolean }) => ({
+        playerId: member.playerId,
+        name: member.name,
+        isGuest: !!member.isGuest
+      })
+    );
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const newTeam: ITeam = {
       teamId: new mongoose.Types.ObjectId(),
@@ -606,6 +621,10 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         return void res.status(400).json({ message: "Algún miembro no existe" });
       }
 
+      const newPlayers: IdentifiablePlayer[] = users.map((u) => ({ playerId: u._id, isGuest: false }));
+      const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+      if (capDenial) return void res.status(402).json(capDenial);
+
       const newTeam: ITeam = {
         teamId: new mongoose.Types.ObjectId(),
         name: teamName,
@@ -665,6 +684,13 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
     if (!userDoc) {
       return void res.status(404).json({ message: "Usuario no encontrado" });
     }
+
+    const capDenial = await enforceLeagueCap(
+      tournament.league,
+      [{ playerId: userDoc._id, isGuest: false }],
+      req.authUser!.id
+    );
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const result = await TournamentModel.updateOne(
       {
@@ -801,6 +827,14 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
       }
     }
 
+    const newPlayers: IdentifiablePlayer[] = members.map((m) => ({
+      playerId: m.playerId,
+      name: m.name,
+      isGuest: !!m.isGuest
+    }));
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
+
     const newTeam: ITeam = {
       teamId: new mongoose.Types.ObjectId(),
       name,
@@ -877,6 +911,16 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
         message: `Cupos insuficientes: quedan ${targetSignups - taken} lugares`
       });
     }
+
+    // Alta masiva: el chequeo de cupo de LIGA rechaza el lote entero si no
+    // entra completo (no acepta parcialmente — un alta parcial silenciosa es
+    // peor que un error claro).
+    const newPlayers: IdentifiablePlayer[] = [
+      ...users.map((u) => ({ playerId: u._id, isGuest: false })),
+      ...allGuestNames.map((name) => ({ name, isGuest: true }))
+    ];
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const newSignups: IIndividualSignup[] = [
       ...users.map((u) => ({

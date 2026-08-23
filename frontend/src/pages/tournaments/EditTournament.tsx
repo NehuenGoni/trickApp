@@ -15,8 +15,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
 import LogoUploader from '../../components/LogoUploader';
-import API_ROUTES, { apiRequest } from '../../config/api';
+import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
+import PlanLimitAlert from '../../components/PlanLimitAlert';
 import useCurrentUser from '../../hooks/useCurrentUser';
+import { clearBillingCache } from '../../hooks/useBilling';
 import { canManageLeague } from '../../utils/leaguePermissions';
 import { toDateTimeLocalInput, fromDateTimeLocalInput } from '../../utils/dateInput';
 import { LeagueListItem } from '../../types/league';
@@ -73,6 +75,10 @@ const EditTournament = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // 402 de cupo de liga al vincular un torneo que ya tiene jugadores (ver
+  // `services/leagueCapGate.ts` / `tournamentUpdate.ts` del backend) — se
+  // muestra aparte del error genérico porque necesita el CTA condicional.
+  const [planLimitError, setPlanLimitError] = useState<{ message: string; canUpgrade: boolean } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -128,6 +134,7 @@ const EditTournament = () => {
     }
     setSaving(true);
     setError('');
+    setPlanLimitError(null);
     try {
       // El endpoint público solo deja editar mientras el torneo sigue
       // `upcoming`; el de admin no tiene esa restricción (mismo criterio que
@@ -148,6 +155,14 @@ const EditTournament = () => {
       });
       navigate(`/tournaments/${id}`);
     } catch (err) {
+      // Vincular una liga nueva puede sumarle de golpe todos los
+      // participantes del torneo — si supera el cupo de jugadores del plan,
+      // el backend responde 402 con el detalle (ver `leagueCapGate.ts`).
+      if (err instanceof PaymentRequiredError && err.reason === 'league_member_limit_reached') {
+        clearBillingCache();
+        setPlanLimitError({ message: err.message, canUpgrade: !!err.canUpgrade });
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Error al actualizar el torneo');
     } finally {
       setSaving(false);
@@ -225,6 +240,14 @@ const EditTournament = () => {
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {planLimitError && (
+            <PlanLimitAlert
+              sx={{ mb: 2 }}
+              severity="error"
+              message={planLimitError.message}
+              canUpgrade={planLimitError.canUpgrade}
+            />
+          )}
 
           <form onSubmit={handleSubmit}>
             <TextField

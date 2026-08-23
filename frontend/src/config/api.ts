@@ -125,13 +125,31 @@ export class PaymentRequiredError extends Error {
   reason?: string;
   plan?: string;
   usage?: { periodKey: string; tournamentsCreated: number; tournamentsTotal: number };
+  /** Presentes solo en `reason: 'league_member_limit_reached'` — ver `services/leagueCapGate.ts` del backend. */
+  limit?: number;
+  current?: number;
+  /** `false` cuando quien rebotó no es el dueño del plan: no tiene sentido ofrecerle upgrade. */
+  canUpgrade?: boolean;
 
-  constructor(message: string, data: { reason?: string; plan?: string; usage?: PaymentRequiredError['usage'] }) {
+  constructor(
+    message: string,
+    data: {
+      reason?: string;
+      plan?: string;
+      usage?: PaymentRequiredError['usage'];
+      limit?: number;
+      current?: number;
+      canUpgrade?: boolean;
+    }
+  ) {
     super(message);
     this.name = 'PaymentRequiredError';
     this.reason = data.reason;
     this.plan = data.plan;
     this.usage = data.usage;
+    this.limit = data.limit;
+    this.current = data.current;
+    this.canUpgrade = data.canUpgrade;
   }
 }
 
@@ -225,7 +243,10 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         throw new PaymentRequiredError(errorMessage, {
           reason: parsedData?.reason,
           plan: parsedData?.plan,
-          usage: parsedData?.usage
+          usage: parsedData?.usage,
+          limit: parsedData?.limit,
+          current: parsedData?.current,
+          canUpgrade: parsedData?.canUpgrade
         });
       }
 

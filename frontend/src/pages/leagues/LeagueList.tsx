@@ -29,12 +29,14 @@ import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
+import useBilling from '../../hooks/useBilling';
 import { canManageLeague, canManageLeagues } from '../../utils/leaguePermissions';
 import { LeagueListItem } from '../../types/league';
 
 const LeagueList = () => {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const { billing } = useBilling();
   const canCreate = canManageLeagues(user);
   const [leagues, setLeagues] = useState<LeagueListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,6 +179,28 @@ const LeagueList = () => {
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         <Chip size="small" label={`${league.tournamentCount} torneo(s)`} />
                         <Chip size="small" label={`${league.completedCount} finalizado(s)`} />
+                        <Chip
+                          size="small"
+                          label={`${league.playerCount} jugador(es)`}
+                          title={
+                            league.guestCount > 0
+                              ? `${league.registeredCount} registrados · ${league.guestCount} invitados`
+                              : undefined
+                          }
+                        />
+                        {league.createdBy === user?._id && billing?.limits.maxMembers != null && (
+                          <Chip
+                            size="small"
+                            label={`${league.playerCount} de ${billing.limits.maxMembers} del plan`}
+                            color={
+                              league.playerCount > billing.limits.maxMembers
+                                ? 'error'
+                                : league.playerCount === billing.limits.maxMembers
+                                ? 'warning'
+                                : 'default'
+                            }
+                          />
+                        )}
                       </Box>
                     </Box>
                   </CardActionArea>

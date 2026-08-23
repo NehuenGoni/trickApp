@@ -8,6 +8,8 @@ export interface BillingUsage {
   tournamentsCreated: number;
   tournamentsTotal: number;
   leaguesUsed: number;
+  /** Jugadores únicos de la liga propia con MÁS gente — `maxMembers` es un tope por liga, no global. */
+  playersInLargestLeague: number;
 }
 
 /** `null` en cualquier límite significa "sin tope" (ver config/plans.ts). */

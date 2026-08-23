@@ -30,6 +30,17 @@ export interface LeagueWithOrganizers extends Omit<League, 'organizers'> {
 export interface LeagueListItem extends League {
   tournamentCount: number;
   completedCount: number;
+  /** Participantes únicos (registrados + invitados) de CUALQUIER torneo de la liga. */
+  playerCount: number;
+  registeredCount: number;
+  guestCount: number;
+}
+
+/** Jugadores únicos de una liga — mismo criterio en el listado, el detalle y el gate del backend. */
+export interface LeaguePlayerCounts {
+  playerCount: number;
+  registeredCount: number;
+  guestCount: number;
 }
 
 /**
@@ -63,8 +74,10 @@ export interface LeagueStandingRow {
 export interface LeagueDetail {
   league: LeagueWithOrganizers;
   tournaments: LeagueTournamentSummary[];
+  playerCounts: LeaguePlayerCounts;
   standings: LeagueStandingRow[];
   tournamentsCounted: number;
+  /** Invitados EN LA TABLA DE POSICIONES (solo torneos completados) — distinto de `playerCounts.guestCount`. */
   guestCount: number;
 }
 

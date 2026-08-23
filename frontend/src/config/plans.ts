@@ -36,8 +36,13 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     tournamentsLifetime: 1,
     tournamentsPerMonth: null,
     maxLeagues: 0,
-    maxMembers: null,
-    maxOrganizers: null
+    // 0, no null: en esta convención `null` = "sin tope" (ver el comment de
+    // arriba). Free no tiene ligas (`maxLeagues: 0`), así que estos números
+    // nunca se leen en la práctica, pero deben coincidir con el backend
+    // (`backend/src/config/plans.ts`) para que ningún consumidor futuro de
+    // `PLAN_DEFINITIONS` lea "ilimitado" donde en realidad es "cero".
+    maxMembers: 0,
+    maxOrganizers: 0
   },
   {
     id: 'basico',
