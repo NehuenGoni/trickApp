@@ -9,6 +9,8 @@ import {
   TEAM_FORMATION_MODES,
   FORMAT_TEAM_SIZE,
   TOURNAMENT_TEAMS_COUNT,
+  MIN_TOURNAMENT_TEAMS,
+  MAX_TOURNAMENT_TEAMS,
   MATCH_STATUS,
   MAX_SCORE
 } from "../config/constants";
@@ -89,7 +91,10 @@ export const updateTournament = async (req: Request, res: Response): Promise<voi
 
     const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
     if ("error" in result) {
-      return void res.status(result.status).json({ message: result.error });
+      // Campos extra (reason/plan/limit/current/canUpgrade) solo están
+      // presentes en el 402 de cupo de liga — ver `services/leagueCapGate.ts`.
+      const { error, status, ...extra } = result;
+      return void res.status(status).json({ message: error, ...extra });
     }
 
     await tournament.save();
@@ -277,8 +282,9 @@ export const getTournamentMatches = async (req: Request, res: Response): Promise
 /**
  * Deshace la propagación de un partido ya finalizado: saca los equipos que había
  * empujado a las siguientes rondas y, si esas rondas ya se habían jugado, las
- * revierte también en cascada. El cuadro tiene 3 niveles, así que la recursión
- * está acotada.
+ * revierte también en cascada. La recursión está acotada por la profundidad
+ * del cuadro (`log2(numberOfTeams)` niveles como máximo — 5 incluso en el
+ * torneo más grande, 32 equipos), así que nunca corre riesgo de desbordarse.
  */
 const rollbackDownstream = async (match: IMatch): Promise<number> => {
   let reverted = 0;
@@ -550,7 +556,14 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       topPlayers,
       recentTournaments,
       config: {
-        teamsPerTournament: TOURNAMENT_TEAMS_COUNT,
+        // Ya no es un número fijo: el creador elige entre MIN y MAX equipos
+        // (ver models/Tournament.ts#numberOfTeams). `default` es lo que
+        // queda si no elige nada (y lo que tienen los torneos legacy).
+        teamsPerTournament: {
+          min: MIN_TOURNAMENT_TEAMS,
+          max: MAX_TOURNAMENT_TEAMS,
+          default: TOURNAMENT_TEAMS_COUNT
+        },
         teamSize: FORMAT_TEAM_SIZE
       }
     });

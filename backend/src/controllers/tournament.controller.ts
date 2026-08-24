@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import mongoose, { ClientSession } from "mongoose";
 import User, { UserRole } from "../models/User";
-import Match from "../models/Match";
+import Match, { IMatchTeam } from "../models/Match";
 import League from "../models/League";
 import { canManageLeague } from "../utils/leaguePermissions";
 import TournamentModel, {
@@ -19,19 +19,22 @@ import {
   TEAM_FORMATION_MODES,
   GUEST_DRAW_MODES,
   FORMAT_TEAM_SIZE,
-  TOURNAMENT_TEAMS_COUNT,
+  MIN_TOURNAMENT_TEAMS,
+  MAX_TOURNAMENT_TEAMS,
   POINTS_TABLE,
-  BRACKET_SLOTS,
-  MATCH_PHASES,
   MATCH_STATUS,
   MATCH_TYPES
 } from "../config/constants";
+import { buildBracket, positionsFromSlot } from "../utils/bracket";
+import { pointsForPosition } from "../utils/points";
 import { withTransaction } from "../utils/withTransaction";
 import { playerKey, validateRosterPayload } from "../utils/roster";
 import { canManageTournament } from "../utils/tournamentAccess";
 import { applyTournamentUpdate } from "../services/tournamentUpdate";
 import { isAdmin } from "../middlewares/roleMiddleware";
 import { consumeTournamentSlot, releaseTournamentSlot, ConsumeSlotResult } from "../services/billing";
+import { enforceLeagueCap } from "../services/leagueCapGate";
+import { IdentifiablePlayer } from "../utils/playerIdentity";
 import { PlanId } from "../config/plans";
 import {
   notifyTournamentSignup,
@@ -78,6 +81,13 @@ const isValidFormationMode = (value: unknown) =>
 
 const isValidGuestDrawMode = (value: unknown): value is GuestDrawMode =>
   value === GUEST_DRAW_MODES.GROUPED || value === GUEST_DRAW_MODES.MIXED;
+
+/** Cantidad de equipos del cuadro: entre `MIN_TOURNAMENT_TEAMS` y `MAX_TOURNAMENT_TEAMS`. */
+export const isValidNumberOfTeams = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= MIN_TOURNAMENT_TEAMS &&
+  value <= MAX_TOURNAMENT_TEAMS;
 
 /**
  * Resuelve y valida el `league` opcional que puede venir en el body al crear
@@ -267,6 +277,7 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
     format,
     teamFormationMode,
     guestDrawMode,
+    numberOfTeams: rawNumberOfTeams,
     league: rawLeague
   } = req.body;
   const createdBy = req.user;
@@ -282,6 +293,14 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
   }
   if (guestDrawMode !== undefined && !isValidGuestDrawMode(guestDrawMode)) {
     return void res.status(400).json({ message: "Modo de agrupación de invitados inválido (grouped | mixed)" });
+  }
+  // Opcional: si no viene, el schema lo deja en TOURNAMENT_TEAMS_COUNT (8), el
+  // tamaño de siempre — así los clientes que todavía no mandan este campo
+  // (o los tests existentes) no se ven afectados.
+  if (rawNumberOfTeams !== undefined && !isValidNumberOfTeams(rawNumberOfTeams)) {
+    return void res.status(400).json({
+      message: `Cantidad de equipos inválida (entre ${MIN_TOURNAMENT_TEAMS} y ${MAX_TOURNAMENT_TEAMS})`
+    });
   }
 
   let league: mongoose.Types.ObjectId | null = null;
@@ -318,6 +337,7 @@ export const createTournament = async (req: AuthRequest, res: Response): Promise
         format,
         teamFormationMode,
         ...(guestDrawMode !== undefined ? { guestDrawMode } : {}),
+        ...(rawNumberOfTeams !== undefined ? { numberOfTeams: rawNumberOfTeams } : {}),
         createdBy,
         status: "upcoming",
         teams: [],
@@ -401,7 +421,10 @@ export const updateTournament = async (req: AuthRequest, res: Response): Promise
 
     const result = await applyTournamentUpdate(tournament, req.body, req.authUser);
     if ("error" in result) {
-      return void res.status(result.status).json({ message: result.error });
+      // Campos extra (reason/plan/limit/current/canUpgrade) solo están
+      // presentes en el 402 de cupo de liga — ver `services/leagueCapGate.ts`.
+      const { error, status, ...extra } = result;
+      return void res.status(status).json({ message: error, ...extra });
     }
 
     await tournament.save();
@@ -456,8 +479,10 @@ export const createTeamInTournament = async (req: AuthRequest, res: Response): P
         .json({ message: "No se pueden agregar equipos a un torneo iniciado o finalizado" });
       return;
     }
-    if (tournament.teams.length >= TOURNAMENT_TEAMS_COUNT) {
-      return void res.status(400).json({ message: "El torneo ya tiene los 8 equipos completos" });
+    if (tournament.teams.length >= tournament.numberOfTeams) {
+      return void res.status(400).json({
+        message: `El torneo ya tiene los ${tournament.numberOfTeams} equipos completos`
+      });
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
@@ -481,6 +506,16 @@ export const createTeamInTournament = async (req: AuthRequest, res: Response): P
         }
       }
     }
+
+    const newPlayers: IdentifiablePlayer[] = members.map(
+      (member: { playerId?: string; name: string; isGuest?: boolean }) => ({
+        playerId: member.playerId,
+        name: member.name,
+        isGuest: !!member.isGuest
+      })
+    );
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const newTeam: ITeam = {
       teamId: new mongoose.Types.ObjectId(),
@@ -586,7 +621,7 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
       if (uniqueIds.size !== memberUserIds.length) {
         return void res.status(400).json({ message: "Hay miembros duplicados en el equipo" });
       }
-      if (tournament.teams.length >= TOURNAMENT_TEAMS_COUNT) {
+      if (tournament.teams.length >= tournament.numberOfTeams) {
         return void res.status(400).json({ message: "El torneo ya está completo" });
       }
 
@@ -606,6 +641,10 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         return void res.status(400).json({ message: "Algún miembro no existe" });
       }
 
+      const newPlayers: IdentifiablePlayer[] = users.map((u) => ({ playerId: u._id, isGuest: false }));
+      const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+      if (capDenial) return void res.status(402).json(capDenial);
+
       const newTeam: ITeam = {
         teamId: new mongoose.Types.ObjectId(),
         name: teamName,
@@ -621,7 +660,7 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         {
           _id: tournament._id,
           status: "upcoming",
-          $expr: { $lt: [{ $size: "$teams" }, TOURNAMENT_TEAMS_COUNT] }
+          $expr: { $lt: [{ $size: "$teams" }, tournament.numberOfTeams] }
         },
         { $push: { teams: newTeam } }
       );
@@ -651,7 +690,7 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
-    const targetSignups = TOURNAMENT_TEAMS_COUNT * expectedSize;
+    const targetSignups = tournament.numberOfTeams * expectedSize;
     if (countFilledSlots(tournament) >= targetSignups) {
       return void res.status(400).json({ message: "El torneo ya está completo" });
     }
@@ -665,6 +704,13 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
     if (!userDoc) {
       return void res.status(404).json({ message: "Usuario no encontrado" });
     }
+
+    const capDenial = await enforceLeagueCap(
+      tournament.league,
+      [{ playerId: userDoc._id, isGuest: false }],
+      req.authUser!.id
+    );
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const result = await TournamentModel.updateOne(
       {
@@ -788,11 +834,11 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     if (tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED) {
-      if (tournament.teams.length >= TOURNAMENT_TEAMS_COUNT) {
-        return void res.status(400).json({ message: "Ya hay 8 equipos" });
+      if (tournament.teams.length >= tournament.numberOfTeams) {
+        return void res.status(400).json({ message: `Ya hay ${tournament.numberOfTeams} equipos` });
       }
     } else {
-      const target = TOURNAMENT_TEAMS_COUNT * expectedSize;
+      const target = tournament.numberOfTeams * expectedSize;
       const taken = countFilledSlots(tournament);
       if (taken + members.length > target) {
         return void res.status(400).json({
@@ -800,6 +846,14 @@ export const addGuestTeam = async (req: AuthRequest, res: Response): Promise<voi
         });
       }
     }
+
+    const newPlayers: IdentifiablePlayer[] = members.map((m) => ({
+      playerId: m.playerId,
+      name: m.name,
+      isGuest: !!m.isGuest
+    }));
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const newTeam: ITeam = {
       teamId: new mongoose.Types.ObjectId(),
@@ -869,7 +923,7 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
-    const targetSignups = TOURNAMENT_TEAMS_COUNT * expectedSize;
+    const targetSignups = tournament.numberOfTeams * expectedSize;
     const incoming = uniqueUserIds.length + allGuestNames.length;
     const taken = countFilledSlots(tournament);
     if (taken + incoming > targetSignups) {
@@ -877,6 +931,16 @@ export const creatorAddSignup = async (req: AuthRequest, res: Response): Promise
         message: `Cupos insuficientes: quedan ${targetSignups - taken} lugares`
       });
     }
+
+    // Alta masiva: el chequeo de cupo de LIGA rechaza el lote entero si no
+    // entra completo (no acepta parcialmente — un alta parcial silenciosa es
+    // peor que un error claro).
+    const newPlayers: IdentifiablePlayer[] = [
+      ...users.map((u) => ({ playerId: u._id, isGuest: false })),
+      ...allGuestNames.map((name) => ({ name, isGuest: true }))
+    ];
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
 
     const newSignups: IIndividualSignup[] = [
       ...users.map((u) => ({
@@ -985,6 +1049,7 @@ export const replaceTournamentRoster = async (req: AuthRequest, res: Response): 
       payload: req.body,
       teamFormationMode: tournament.teamFormationMode,
       teamSize: FORMAT_TEAM_SIZE[tournament.format],
+      numberOfTeams: tournament.numberOfTeams,
       existingTeams: tournament.teams,
       individualSignups: tournament.individualSignups
     });
@@ -1008,37 +1073,6 @@ export const replaceTournamentRoster = async (req: AuthRequest, res: Response): 
   } catch (error) {
     res.status(500).json({ message: "Error al reorganizar los equipos", error });
   }
-};
-
-interface BracketTemplate {
-  bracketSlot: typeof BRACKET_SLOTS[keyof typeof BRACKET_SLOTS];
-  phase: typeof MATCH_PHASES[keyof typeof MATCH_PHASES];
-}
-
-const BRACKET_TEMPLATES: BracketTemplate[] = [
-  { bracketSlot: BRACKET_SLOTS.QF1, phase: MATCH_PHASES.QUARTER_FINALS },
-  { bracketSlot: BRACKET_SLOTS.QF2, phase: MATCH_PHASES.QUARTER_FINALS },
-  { bracketSlot: BRACKET_SLOTS.QF3, phase: MATCH_PHASES.QUARTER_FINALS },
-  { bracketSlot: BRACKET_SLOTS.QF4, phase: MATCH_PHASES.QUARTER_FINALS },
-  { bracketSlot: BRACKET_SLOTS.SFG1, phase: MATCH_PHASES.SEMIFINALS_GOLD },
-  { bracketSlot: BRACKET_SLOTS.SFG2, phase: MATCH_PHASES.SEMIFINALS_GOLD },
-  { bracketSlot: BRACKET_SLOTS.SFS1, phase: MATCH_PHASES.SEMIFINALS },
-  { bracketSlot: BRACKET_SLOTS.SFS2, phase: MATCH_PHASES.SEMIFINALS },
-  { bracketSlot: BRACKET_SLOTS.FG, phase: MATCH_PHASES.FINAL_GOLD },
-  { bracketSlot: BRACKET_SLOTS.FS, phase: MATCH_PHASES.FINAL },
-  { bracketSlot: BRACKET_SLOTS.M34, phase: MATCH_PHASES.THIRD_PLACE },
-  { bracketSlot: BRACKET_SLOTS.M78, phase: MATCH_PHASES.SEVENTH_PLACE }
-];
-
-const FEED_MAP: Record<string, { winnerTo?: string; loserTo?: string }> = {
-  [BRACKET_SLOTS.QF1]: { winnerTo: BRACKET_SLOTS.SFG1, loserTo: BRACKET_SLOTS.SFS1 },
-  [BRACKET_SLOTS.QF2]: { winnerTo: BRACKET_SLOTS.SFG1, loserTo: BRACKET_SLOTS.SFS1 },
-  [BRACKET_SLOTS.QF3]: { winnerTo: BRACKET_SLOTS.SFG2, loserTo: BRACKET_SLOTS.SFS2 },
-  [BRACKET_SLOTS.QF4]: { winnerTo: BRACKET_SLOTS.SFG2, loserTo: BRACKET_SLOTS.SFS2 },
-  [BRACKET_SLOTS.SFG1]: { winnerTo: BRACKET_SLOTS.FG, loserTo: BRACKET_SLOTS.M34 },
-  [BRACKET_SLOTS.SFG2]: { winnerTo: BRACKET_SLOTS.FG, loserTo: BRACKET_SLOTS.M34 },
-  [BRACKET_SLOTS.SFS1]: { winnerTo: BRACKET_SLOTS.FS, loserTo: BRACKET_SLOTS.M78 },
-  [BRACKET_SLOTS.SFS2]: { winnerTo: BRACKET_SLOTS.FS, loserTo: BRACKET_SLOTS.M78 }
 };
 
 const teamToMatchTeam = (team: ITeam) => ({
@@ -1074,6 +1108,7 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    const numberOfTeams = tournament.numberOfTeams;
 
     if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
       // Solo en random el sorteo rearma los equipos desde cero: descarta el
@@ -1082,7 +1117,7 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
       // armados (por los jugadores o a mano) y este endpoint solo sortea los
       // cruces, así que NO hay que tocar `tournament.teams` acá.
       tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
-      const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
+      const totalSlots = numberOfTeams * expectedSize;
       const filledFromTeams = tournament.teams.length * expectedSize;
       const filledFromSignups = tournament.individualSignups.length;
       if (filledFromTeams + filledFromSignups !== totalSlots) {
@@ -1090,7 +1125,7 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
           message: `Faltan jugadores: ${filledFromTeams + filledFromSignups}/${totalSlots}`
         });
       }
-      const teamsNeeded = TOURNAMENT_TEAMS_COUNT - tournament.teams.length;
+      const teamsNeeded = numberOfTeams - tournament.teams.length;
       const drawnTeams = buildDrawnTeams(
         tournament.individualSignups,
         expectedSize,
@@ -1103,9 +1138,9 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
       // ya no aplica.
       tournament.rosterEditedAt = undefined;
     } else {
-      if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
+      if (tournament.teams.length !== numberOfTeams) {
         return void res.status(400).json({
-          message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
+          message: `Faltan equipos: ${tournament.teams.length}/${numberOfTeams}`
         });
       }
       if (tournament.teamFormationMode === TEAM_FORMATION_MODES.CREATOR_FORMED) {
@@ -1122,17 +1157,22 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
     tournament.draftPairOrder = draftPairOrder;
     await tournament.save();
 
+    // El sorteo reparte los N equipos igual que lo hará `startTournament`: los
+    // primeros `2*matches` juegan la primera ronda de a pares consecutivos, el
+    // resto (solo si N no es potencia de 2) descansa y entra directo a la
+    // ronda siguiente — ver `buildBracket` en utils/bracket.ts.
+    const plan = buildBracket(numberOfTeams);
+    const matches = plan.firstRoundSlots.length;
     const pairOrderTeams = draftPairOrder.map(
       (tid) => tournament.teams.find((t) => t.teamId.toString() === tid.toString())!
     );
-    const pairings = ([BRACKET_SLOTS.QF1, BRACKET_SLOTS.QF2, BRACKET_SLOTS.QF3, BRACKET_SLOTS.QF4] as const).map(
-      (slot, i) => ({
-        slot,
-        teamIds: [pairOrderTeams[i * 2].teamId, pairOrderTeams[i * 2 + 1].teamId]
-      })
-    );
+    const pairings = plan.firstRoundSlots.map((slot, i) => ({
+      slot,
+      teamIds: [pairOrderTeams[i * 2].teamId, pairOrderTeams[i * 2 + 1].teamId]
+    }));
+    const resting = pairOrderTeams.slice(matches * 2).map((t) => ({ teamId: t.teamId, name: t.name }));
 
-    res.status(200).json({ teams: tournament.teams, pairings });
+    res.status(200).json({ teams: tournament.teams, pairings, resting });
   } catch (error) {
     res.status(500).json({ message: "Error al sortear el torneo", error });
   }
@@ -1141,9 +1181,11 @@ export const drawTournament = async (req: AuthRequest, res: Response): Promise<v
 export const startTournament = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { mode, pairings } = req.body as {
+    const { mode, pairings, resting: restingBody } = req.body as {
       mode?: "random" | "manual";
       pairings?: Array<{ slot: string; teamIds: string[] }>;
+      /** Solo en modo manual: teamIds de los equipos que descansan la 1ra ronda. */
+      resting?: string[];
     };
 
     if (mode !== "random" && mode !== "manual") {
@@ -1162,16 +1204,17 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     }
 
     const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    const numberOfTeams = tournament.numberOfTeams;
     const hasDraft =
       Array.isArray(tournament.draftPairOrder) &&
-      tournament.draftPairOrder.length === TOURNAMENT_TEAMS_COUNT;
+      tournament.draftPairOrder.length === numberOfTeams;
 
     // Si ya se sorteó desde /draw, los equipos están armados y no hay que tocar nada acá.
     // Si no (alguien inicia sin pasar por el preview), se arma inline como antes.
     if (!hasDraft) {
       if (tournament.teamFormationMode === TEAM_FORMATION_MODES.RANDOM) {
         tournament.teams = tournament.teams.filter((t) => !t.isDrawn);
-        const totalSlots = TOURNAMENT_TEAMS_COUNT * expectedSize;
+        const totalSlots = numberOfTeams * expectedSize;
         const filledFromTeams = tournament.teams.length * expectedSize;
         const filledFromSignups = tournament.individualSignups.length;
         if (filledFromTeams + filledFromSignups !== totalSlots) {
@@ -1179,7 +1222,7 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
             message: `Faltan jugadores: ${filledFromTeams + filledFromSignups}/${totalSlots}`
           });
         }
-        const teamsNeeded = TOURNAMENT_TEAMS_COUNT - tournament.teams.length;
+        const teamsNeeded = numberOfTeams - tournament.teams.length;
         const drawnTeams = buildDrawnTeams(
           tournament.individualSignups,
           expectedSize,
@@ -1189,9 +1232,9 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
         );
         tournament.teams.push(...drawnTeams);
       } else {
-        if (tournament.teams.length !== TOURNAMENT_TEAMS_COUNT) {
+        if (tournament.teams.length !== numberOfTeams) {
           return void res.status(400).json({
-            message: `Faltan equipos: ${tournament.teams.length}/${TOURNAMENT_TEAMS_COUNT}`
+            message: `Faltan equipos: ${tournament.teams.length}/${numberOfTeams}`
           });
         }
         if (tournament.teamFormationMode === TEAM_FORMATION_MODES.CREATOR_FORMED) {
@@ -1205,6 +1248,13 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
       }
     }
 
+    // Cuadro del torneo: `matches` cruces de primera ronda + (si N no es
+    // potencia de 2) `restCount` equipos que la primera ronda no alcanza a
+    // emparejar y entran directo a la ronda siguiente (ver utils/bracket.ts).
+    const plan = buildBracket(numberOfTeams);
+    const matches = plan.firstRoundSlots.length;
+    const restCount = plan.restEntrySlots.length;
+
     let pairOrder: ITeam[];
     if (mode === "random" && hasDraft) {
       pairOrder = tournament
@@ -1212,7 +1262,7 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
           tournament.teams.find((t) => t.teamId.toString() === tid.toString())
         )
         .filter((t): t is ITeam => !!t);
-      if (pairOrder.length !== TOURNAMENT_TEAMS_COUNT) {
+      if (pairOrder.length !== numberOfTeams) {
         return void res.status(400).json({
           message: "El sorteo guardado no coincide con los equipos actuales, volvé a sortear"
         });
@@ -1220,20 +1270,14 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     } else if (mode === "random") {
       pairOrder = shuffle(tournament.teams);
     } else {
-      if (!Array.isArray(pairings) || pairings.length !== 4) {
+      if (!Array.isArray(pairings) || pairings.length !== matches) {
         return void res.status(400).json({
-          message: "pairings debe tener 4 entradas (QF1..QF4)"
+          message: `pairings debe tener ${matches} entrada(s), una por cruce de la primera ronda`
         });
       }
-      const expectedSlots = [
-        BRACKET_SLOTS.QF1,
-        BRACKET_SLOTS.QF2,
-        BRACKET_SLOTS.QF3,
-        BRACKET_SLOTS.QF4
-      ];
       const seen = new Set<string>();
       const pairOrderTmp: ITeam[] = [];
-      for (const slot of expectedSlots) {
+      for (const slot of plan.firstRoundSlots) {
         const entry = pairings.find((p) => p.slot === slot);
         if (!entry) {
           return void res.status(400).json({ message: `Falta el slot ${slot} en pairings` });
@@ -1259,49 +1303,89 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
           pairOrderTmp.push(team);
         }
       }
-      if (seen.size !== TOURNAMENT_TEAMS_COUNT) {
+
+      // Solo hace falta indicar quién descansa cuando el cuadro tiene
+      // descansos (N no es potencia de 2). Con cuadro parejo, `resting` debe
+      // venir vacío: no hay nadie que descanse.
+      const restingIds = Array.isArray(restingBody) ? restingBody : [];
+      if (restingIds.length !== restCount) {
         return void res.status(400).json({
-          message: "pairings debe incluir los 8 equipos sin duplicados"
+          message:
+            restCount === 0
+              ? "Este cuadro no tiene descansos: no se debe enviar 'resting'"
+              : `Falta indicar quién descansa: 'resting' debe tener ${restCount} equipo(s)`
         });
       }
-      pairOrder = pairOrderTmp;
+      const restingTeamsTmp: ITeam[] = [];
+      for (const tid of restingIds) {
+        if (seen.has(tid)) {
+          return void res.status(400).json({ message: `teamId duplicado: ${tid}` });
+        }
+        seen.add(tid);
+        const team = tournament.teams.find((t) => t.teamId.toString() === tid);
+        if (!team) {
+          res.status(400).json({ message: `teamId no pertenece al torneo: ${tid}` });
+          return;
+        }
+        restingTeamsTmp.push(team);
+      }
+
+      if (seen.size !== numberOfTeams) {
+        return void res.status(400).json({
+          message: `pairings y resting deben incluir entre los dos los ${numberOfTeams} equipos, sin duplicados`
+        });
+      }
+      pairOrder = [...pairOrderTmp, ...restingTeamsTmp];
     }
 
     const slotToMatchId = new Map<string, mongoose.Types.ObjectId>();
-    for (const tpl of BRACKET_TEMPLATES) {
-      const isQF = tpl.phase === MATCH_PHASES.QUARTER_FINALS;
-      const slotIndex =
-        tpl.bracketSlot === BRACKET_SLOTS.QF1
-          ? 0
-          : tpl.bracketSlot === BRACKET_SLOTS.QF2
-          ? 1
-          : tpl.bracketSlot === BRACKET_SLOTS.QF3
-          ? 2
-          : 3;
-      const teamsForMatch = isQF
-        ? [pairOrder[slotIndex * 2], pairOrder[slotIndex * 2 + 1]].map(teamToMatchTeam)
+    for (const node of plan.nodes) {
+      const firstRoundIndex = plan.firstRoundSlots.indexOf(node.slot);
+      const isFirstRound = firstRoundIndex !== -1;
+      const teamsForMatch = isFirstRound
+        ? [pairOrder[firstRoundIndex * 2], pairOrder[firstRoundIndex * 2 + 1]].map(teamToMatchTeam)
         : [];
 
       const m = await Match.create({
         tournament: tournament._id,
         teams: teamsForMatch,
-        status: isQF ? MATCH_STATUS.IN_PROGRESS : MATCH_STATUS.PENDING,
+        status: isFirstRound ? MATCH_STATUS.IN_PROGRESS : MATCH_STATUS.PENDING,
         type: MATCH_TYPES.TOURNAMENT,
-        phase: tpl.phase,
-        bracketSlot: tpl.bracketSlot
+        phase: node.phase,
+        bracketSlot: node.slot
       });
-      slotToMatchId.set(tpl.bracketSlot, m._id as mongoose.Types.ObjectId);
+      slotToMatchId.set(node.slot, m._id as mongoose.Types.ObjectId);
     }
 
-    for (const [slot, feeds] of Object.entries(FEED_MAP)) {
-      const matchId = slotToMatchId.get(slot);
+    for (const node of plan.nodes) {
+      const matchId = slotToMatchId.get(node.slot);
       if (!matchId) continue;
       const update: Record<string, mongoose.Types.ObjectId> = {};
-      if (feeds.winnerTo) update.feedsWinnerTo = slotToMatchId.get(feeds.winnerTo)!;
-      if (feeds.loserTo) update.feedsLoserTo = slotToMatchId.get(feeds.loserTo)!;
+      if (node.winnerTo) update.feedsWinnerTo = slotToMatchId.get(node.winnerTo)!;
+      if (node.loserTo) update.feedsLoserTo = slotToMatchId.get(node.loserTo)!;
       if (Object.keys(update).length > 0) {
         await Match.updateOne({ _id: matchId }, { $set: update });
       }
+    }
+
+    // Los equipos que descansan la 1ra ronda (solo si N no es potencia de 2)
+    // no tienen partido que esperar: se precargan ya mismo en el slot que les
+    // toca (`restEntrySlots`), con el mismo mecanismo que usa `propagate()`
+    // para cualquier otro avance (empujar equipo, pasar a IN_PROGRESS al
+    // llegar a 2). Es la única parte del arranque del torneo que no sale de
+    // jugar un partido: el resto de la propagación ya la resuelve el flujo
+    // normal de resultados.
+    const restingTeams = pairOrder.slice(matches * 2);
+    for (let k = 0; k < restingTeams.length; k++) {
+      const targetMatchId = slotToMatchId.get(plan.restEntrySlots[k]);
+      if (!targetMatchId) continue;
+      const target = await Match.findById(targetMatchId);
+      if (!target) continue;
+      target.teams.push(teamToMatchTeam(restingTeams[k]) as unknown as (typeof target.teams)[number]);
+      if (target.teams.length === 2 && target.status === MATCH_STATUS.PENDING) {
+        target.status = MATCH_STATUS.IN_PROGRESS;
+      }
+      await target.save();
     }
 
     tournament.matches = Array.from(slotToMatchId.values());
@@ -1311,27 +1395,34 @@ export const startTournament = async (req: AuthRequest, res: Response): Promise<
     tournament.status = "in_progress";
     await tournament.save();
 
-    // `pairOrder[0]` y `pairOrder[1]` se enfrentan en QF1, `pairOrder[2]`/`pairOrder[3]`
-    // en QF2, etc. — mismo orden que arma el bracket unas líneas más arriba.
+    // `pairOrder[0]` y `pairOrder[1]` se enfrentan en el primer cruce,
+    // `pairOrder[2]`/`pairOrder[3]` en el segundo, etc. — mismo orden que arma
+    // el cuadro más arriba. Los que descansan (el resto de `pairOrder`) no
+    // tienen rival todavía: se avisan igual, con `opponent: null` (la
+    // plantilla de mail ya contempla ese caso — "Todavía no tenés rival
+    // asignado.").
     interface StartedPlayerInfo {
       playerId: string;
       teammates: string[];
-      opponent: string;
+      opponent: string | null;
     }
     const playerInfos: StartedPlayerInfo[] = [];
-    const collectStartedPlayers = (team: ITeam, rival: ITeam) => {
+    const collectStartedPlayers = (team: ITeam, rival: ITeam | null) => {
       for (const player of team.players) {
         if (!player.playerId) continue; // invitados: sin cuenta, sin email.
         playerInfos.push({
           playerId: player.playerId.toString(),
           teammates: team.players.filter((p) => p !== player).map((p) => p.name),
-          opponent: rival.name
+          opponent: rival?.name ?? null
         });
       }
     };
-    for (let qfIndex = 0; qfIndex < 4; qfIndex++) {
-      collectStartedPlayers(pairOrder[qfIndex * 2], pairOrder[qfIndex * 2 + 1]);
-      collectStartedPlayers(pairOrder[qfIndex * 2 + 1], pairOrder[qfIndex * 2]);
+    for (let i = 0; i < matches; i++) {
+      collectStartedPlayers(pairOrder[i * 2], pairOrder[i * 2 + 1]);
+      collectStartedPlayers(pairOrder[i * 2 + 1], pairOrder[i * 2]);
+    }
+    for (const team of restingTeams) {
+      collectStartedPlayers(team, null);
     }
     if (playerInfos.length > 0) {
       const recipients = await resolveUsers(playerInfos.map((p) => p.playerId));
@@ -1363,61 +1454,44 @@ export const getTournamentLeaderboard = async (req: Request, res: Response): Pro
   }
 };
 
-const positionFromMatch = (
-  bracketSlot: string,
-  isWinner: boolean
-): number | null => {
-  if (bracketSlot === BRACKET_SLOTS.FG) return isWinner ? 1 : 2;
-  if (bracketSlot === BRACKET_SLOTS.M34) return isWinner ? 3 : 4;
-  if (bracketSlot === BRACKET_SLOTS.FS) return isWinner ? 5 : 6;
-  if (bracketSlot === BRACKET_SLOTS.M78) return isWinner ? 7 : 8;
-  return null;
-};
-
+/**
+ * Puntos y posiciones finales del torneo, a partir de sus partidos. Un slot
+ * puede decidir un solo lado (el perdedor, cuando la zona era de tamaño
+ * impar — ver `positionsFromSlot` en `utils/bracket.ts`) o los dos a la vez
+ * (el caso normal, zona de 2): por eso cada lado se evalúa independiente.
+ */
 export const computePlayerStats = async (
   tournament: ITournament
 ): Promise<IPlayerStat[]> => {
   const matches = await Match.find({ tournament: tournament._id });
   const stats: IPlayerStat[] = [];
-  const points = POINTS_TABLE[tournament.type as keyof typeof POINTS_TABLE];
-  if (!points) return stats;
+  if (!POINTS_TABLE[tournament.type as keyof typeof POINTS_TABLE]) return stats;
+
+  const pushStats = (team: IMatchTeam | undefined, position: number) => {
+    if (!team) return;
+    for (const p of team.players) {
+      stats.push({
+        playerId: p.playerId,
+        name: p.username || "Invitado",
+        isGuest: !!p.isGuest,
+        position,
+        points: pointsForPosition(tournament.type, position, tournament.numberOfTeams)
+      });
+    }
+  };
 
   for (const m of matches) {
     if (!m.bracketSlot) continue;
     if (m.status !== MATCH_STATUS.FINISHED) continue;
     if (!m.winner || !m.losingTeam) continue;
-    const winnerPos = positionFromMatch(m.bracketSlot, true);
-    const loserPos = positionFromMatch(m.bracketSlot, false);
-    if (winnerPos === null || loserPos === null) continue;
+    const outcome = positionsFromSlot(m.bracketSlot);
+    if (!outcome) continue;
 
-    const teamWinner = m.teams.find(
-      (t) => t.teamId.toString() === m.winner!.toString()
-    );
-    const teamLoser = m.teams.find(
-      (t) => t.teamId.toString() === m.losingTeam!.toString()
-    );
-    if (teamWinner) {
-      for (const p of teamWinner.players) {
-        stats.push({
-          playerId: p.playerId,
-          name: p.username || "Invitado",
-          isGuest: !!p.isGuest,
-          position: winnerPos,
-          points: points[winnerPos as keyof typeof points] ?? 0
-        });
-      }
-    }
-    if (teamLoser) {
-      for (const p of teamLoser.players) {
-        stats.push({
-          playerId: p.playerId,
-          name: p.username || "Invitado",
-          isGuest: !!p.isGuest,
-          position: loserPos,
-          points: points[loserPos as keyof typeof points] ?? 0
-        });
-      }
-    }
+    const teamWinner = m.teams.find((t) => t.teamId.toString() === m.winner!.toString());
+    const teamLoser = m.teams.find((t) => t.teamId.toString() === m.losingTeam!.toString());
+
+    if (outcome.winner !== null) pushStats(teamWinner, outcome.winner);
+    if (outcome.loser !== null) pushStats(teamLoser, outcome.loser);
   }
   return stats;
 };

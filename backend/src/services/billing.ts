@@ -1,9 +1,10 @@
-import { ClientSession } from "mongoose";
+import mongoose, { ClientSession } from "mongoose";
 import User, { IBilling } from "../models/User";
 import Subscription, { ISubscription, SubscriptionInterval, PaymentProvider } from "../models/Subscription";
 import { PreapprovalStatus, getPreapproval, searchAuthorizedPayments } from "./mercadopago";
 import Payment, { IPayment } from "../models/Payment";
 import League from "../models/League";
+import { computeLeaguePlayerCounts } from "../utils/leaguePlayers";
 import { PLANS, PlanId, periodKeyOf, monthsForInterval } from "../config/plans";
 import { withTransaction } from "../utils/withTransaction";
 import { notifyPaymentApproved } from "./notifications";
@@ -597,7 +598,7 @@ export interface UsageSummary {
   interval: SubscriptionInterval | null;
   autoRenew: boolean;
   paymentProvider: PaymentProvider | null;
-  usage: IBilling["usage"] & { leaguesUsed: number };
+  usage: IBilling["usage"] & { leaguesUsed: number; playersInLargestLeague: number };
   limits: (typeof PLANS)[PlanId];
 }
 
@@ -609,13 +610,19 @@ export interface UsageSummary {
  * cuándo paga y si tiene débito automático activo.
  */
 export const getUsage = async (userId: string): Promise<UsageSummary> => {
-  const [user, subscription, leaguesUsed] = await Promise.all([
+  const [user, subscription, ownedLeagues] = await Promise.all([
     User.findById(userId).select("billing"),
     Subscription.findOne({ userId, status: { $in: ["active", "past_due"] } }).sort({ currentPeriodEnd: -1 }),
-    League.countDocuments({ createdBy: userId })
+    League.find({ createdBy: userId }).select("_id").lean<{ _id: mongoose.Types.ObjectId }[]>()
   ]);
   if (!user) throw new Error("Usuario no encontrado");
   const effective = resolveBilling(user.billing);
+  const leaguesUsed = ownedLeagues.length;
+  // `maxMembers` es un tope POR LIGA, no global: la métrica que importa es
+  // el máximo entre las ligas propias (la que primero va a chocar contra el
+  // gate), no la suma de todas.
+  const playerCountsByLeague = await computeLeaguePlayerCounts(ownedLeagues.map((l) => l._id));
+  const playersInLargestLeague = Math.max(0, ...[...playerCountsByLeague.values()].map((c) => c.playerCount));
   return {
     plan: user.billing.plan,
     status: user.billing.status,
@@ -634,7 +641,8 @@ export const getUsage = async (userId: string): Promise<UsageSummary> => {
       periodKey: user.billing.usage.periodKey,
       tournamentsCreated: user.billing.usage.tournamentsCreated,
       tournamentsTotal: user.billing.usage.tournamentsTotal,
-      leaguesUsed
+      leaguesUsed,
+      playersInLargestLeague
     },
     limits: PLANS[user.billing.plan]
   };

@@ -54,6 +54,7 @@ interface AdminTournament {
   format: 'duos' | 'trios';
   teamFormationMode: TeamFormationMode;
   guestDrawMode: 'grouped' | 'mixed';
+  numberOfTeams?: number;
   pointsAwarded: boolean;
   teams: Array<{ teamId: string; name: string; isDrawn?: boolean }>;
   individualSignups?: Array<{ name: string }>;

@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from './AdminLayout';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import TournamentLogo from '../../components/TournamentLogo';
+import MetricCard from '../../components/MetricCard';
 import { TournamentLogoMeta } from '../../types/tournament';
 
 interface AdminStats {
@@ -44,35 +45,6 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'En curso',
   completed: 'Finalizado'
 };
-
-const MetricCard = ({
-  icon,
-  label,
-  value,
-  hint
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  hint?: string;
-}) => (
-  <Paper elevation={3} sx={{ p: 2.5, height: '100%' }}>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, color: '#D4AF37' }}>
-      {icon}
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-    </Box>
-    <Typography variant="h4" fontWeight={700}>
-      {value}
-    </Typography>
-    {hint && (
-      <Typography variant="caption" color="text.secondary">
-        {hint}
-      </Typography>
-    )}
-  </Paper>
-);
 
 const AdminDashboard = () => {
   const navigate = useNavigate();

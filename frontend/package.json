@@ -9,6 +9,7 @@
     "@fontsource/montserrat": "^5.2.6",
     "@mui/icons-material": "^6.4.6",
     "@mui/material": "^6.4.9",
+    "@mui/x-charts": "^7.29.1",
     "@mui/x-date-pickers": "^7.27.1",
     "@testing-library/dom": "^10.4.0",
     "@types/node": "^16.18.126",

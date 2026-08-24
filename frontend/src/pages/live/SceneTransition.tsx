@@ -25,7 +25,12 @@ const SceneTransition: React.FC<Props> = ({ direction, children }) => {
         width: '100%',
         height: '100%',
         display: 'flex',
-        overflow: { xs: 'visible', md: 'hidden' },
+        // X se mantiene oculto para que el translateX(±40px) de la
+        // animación (navegación manual) no genere scroll horizontal. Y ya
+        // no se recorta: si el contenido no entra, el contenedor padre
+        // (LiveTournament) lo hace scrolleable en vez de cortarlo en silencio.
+        overflowX: 'hidden',
+        overflowY: 'visible',
         '@keyframes scene-in': {
           from: { opacity: 0, transform: `${axis}(${offset}px)` },
           to: { opacity: 1, transform: `${axis}(0px)` }
@@ -36,8 +41,10 @@ const SceneTransition: React.FC<Props> = ({ direction, children }) => {
       {/* margin: 'auto' en vez de alignItems/justifyContent 'center': centra
           igual cuando el contenido entra, pero si es más alto que el
           contenedor el margen colapsa a 0 y se ancla arriba en vez de
-          desbordar simétricamente y pisar el header. */}
-      <Box sx={{ width: '100%', margin: 'auto', maxHeight: { xs: 'none', md: '100%' }, overflow: { xs: 'visible', md: 'hidden' } }}>{children}</Box>
+          desbordar simétricamente y pisar el header. Ya no se le pone techo
+          de altura: el contenedor de escena en LiveTournament es quien
+          scrollea si esto no entra. */}
+      <Box sx={{ width: '100%', margin: 'auto' }}>{children}</Box>
     </Box>
   );
 };

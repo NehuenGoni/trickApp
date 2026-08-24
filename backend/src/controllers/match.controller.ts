@@ -2,14 +2,8 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Match, { IMatch, IMatchTeam } from "../models/Match";
 import Tournament from "../models/Tournament";
-import {
-  MATCH_TYPES,
-  MATCH_STATUS,
-  MAX_SCORE,
-  BRACKET_SLOTS,
-  SLOT_TO_POSITION,
-  MATCH_PHASE_LABELS
-} from "../config/constants";
+import { MATCH_TYPES, MATCH_STATUS, MAX_SCORE, MATCH_PHASE_LABELS } from "../config/constants";
+import { positionsFromSlot } from "../utils/bracket";
 import { closeTournament } from "./tournament.controller";
 import { canManageTournament } from "../utils/tournamentAccess";
 import { notifyMatchResults, resolveUsers, MatchResultEntry } from "../services/notifications";
@@ -17,13 +11,6 @@ import { notifyMatchResults, resolveUsers, MatchResultEntry } from "../services/
 interface AuthRequest extends Request {
   user?: string;
 }
-
-const TERMINAL_SLOTS = new Set<string>([
-  BRACKET_SLOTS.FG,
-  BRACKET_SLOTS.FS,
-  BRACKET_SLOTS.M34,
-  BRACKET_SLOTS.M78
-]);
 
 // Solo restringe partidos de torneo: en un amistoso el modelo Match no guarda
 // quién lo creó, así que no hay contra qué autorizar (un amistoso entre
@@ -156,14 +143,6 @@ export const getMatchById = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-/** Posición final por bracket slot terminal — mismo dato que usa `awardTournamentPoints` en `tournament.controller.ts`. */
-const FINAL_POSITION_BY_SLOT: Record<string, { winner: number; loser: number }> = {
-  [BRACKET_SLOTS.FG]: { winner: SLOT_TO_POSITION.FG_WINNER, loser: SLOT_TO_POSITION.FG_LOSER },
-  [BRACKET_SLOTS.M34]: { winner: SLOT_TO_POSITION.M34_WINNER, loser: SLOT_TO_POSITION.M34_LOSER },
-  [BRACKET_SLOTS.FS]: { winner: SLOT_TO_POSITION.FS_WINNER, loser: SLOT_TO_POSITION.FS_LOSER },
-  [BRACKET_SLOTS.M78]: { winner: SLOT_TO_POSITION.M78_WINNER, loser: SLOT_TO_POSITION.M78_LOSER }
-};
-
 interface MatchResultPlayerInfo {
   playerId: string;
   won: boolean;
@@ -174,7 +153,9 @@ interface MatchResultPlayerInfo {
 /**
  * Arma, por jugador registrado (invitados sin `playerId` quedan afuera), si
  * ganó o perdió, a qué fase sigue (si el equipo avanzó a otro match) o en qué
- * posición terminó (si el slot era terminal y no hay adónde avanzar).
+ * posición terminó (si ese lado ya no tenía adónde avanzar — ver
+ * `positionsFromSlot` en `utils/bracket.ts`: en una zona de tamaño impar el
+ * perdedor puede quedar decidido solo, sin que el ganador lo esté todavía).
  */
 const collectMatchResultInfos = (
   bracketSlot: string,
@@ -183,21 +164,26 @@ const collectMatchResultInfos = (
   winnerTarget: IMatch | null,
   loserTarget: IMatch | null
 ): MatchResultPlayerInfo[] => {
-  const positions = FINAL_POSITION_BY_SLOT[bracketSlot];
+  const outcome = positionsFromSlot(bracketSlot);
   const infos: MatchResultPlayerInfo[] = [];
 
-  const addTeam = (team: IMatchTeam | null, won: boolean, target: IMatch | null, positionKey: "winner" | "loser") => {
+  const addTeam = (team: IMatchTeam | null, won: boolean, target: IMatch | null, position: number | null) => {
     if (!team) return;
-    const nextPhaseLabel = target?.phase ? MATCH_PHASE_LABELS[target.phase] ?? null : null;
-    const finalPosition = !target && positions ? positions[positionKey] : null;
+    // MATCH_PHASE_LABELS solo traduce los códigos legacy (torneos de 8
+    // equipos); para un tamaño nuevo `target.phase` ya viene en español
+    // (`phaseLabelFor`), así que el fallback es usarlo tal cual.
+    const nextPhaseLabel = target?.phase
+      ? MATCH_PHASE_LABELS[target.phase as keyof typeof MATCH_PHASE_LABELS] ?? target.phase
+      : null;
+    const finalPosition = !target ? position : null;
     for (const player of team.players) {
       if (!player.playerId) continue; // invitados: sin cuenta, sin email.
       infos.push({ playerId: player.playerId.toString(), won, nextPhaseLabel, finalPosition });
     }
   };
 
-  addTeam(winnerTeam, true, winnerTarget, "winner");
-  addTeam(loserTeam, false, loserTarget, "loser");
+  addTeam(winnerTeam, true, winnerTarget, outcome?.winner ?? null);
+  addTeam(loserTeam, false, loserTarget, outcome?.loser ?? null);
   return infos;
 };
 
@@ -343,12 +329,24 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
     if (match.status === MATCH_STATUS.FINISHED && match.type === MATCH_TYPES.TOURNAMENT) {
       await advanceWinnerLoser(match);
 
-      if (match.tournament && match.bracketSlot && TERMINAL_SLOTS.has(match.bracketSlot)) {
-        const remaining = await Match.countDocuments({
+      // Un slot "decide algo" cuando `positionsFromSlot` resuelve al menos un
+      // lado (el caso normal, zona de 2: ambos lados juntos; o el de una zona
+      // impar, donde el perdedor puede quedar decidido solo — ver
+      // utils/bracket.ts). El torneo está listo para cerrar cuando ya no
+      // queda ningún partido decisivo sin terminar. Se chequea solo si ESTE
+      // partido era decisivo: si no lo era, terminarlo no pudo haber
+      // completado nada nuevo.
+      const isDecisiveSlot = (slot?: string | null): boolean => {
+        if (!slot) return false;
+        const outcome = positionsFromSlot(slot);
+        return !!outcome && (outcome.winner !== null || outcome.loser !== null);
+      };
+      if (match.tournament && isDecisiveSlot(match.bracketSlot)) {
+        const pending = await Match.find({
           tournament: match.tournament,
-          bracketSlot: { $in: Array.from(TERMINAL_SLOTS) },
           status: { $ne: MATCH_STATUS.FINISHED }
-        });
+        }).select("bracketSlot");
+        const remaining = pending.filter((m) => isDecisiveSlot(m.bracketSlot)).length;
         if (remaining === 0) {
           await closeTournament(match.tournament as mongoose.Types.ObjectId);
         }

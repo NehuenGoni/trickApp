@@ -14,7 +14,8 @@ const API_ROUTES = {
   USERS: {
     LIST: `${API_BASE_URL}/users`,
     DETAIL: (id: string) => `${API_BASE_URL}/users/${id}`,
-    STATS:  (id: any) => `${API_BASE_URL}/users/${id}/stats`,
+    STATS:  (id: string) => `${API_BASE_URL}/users/${id}/stats`,
+    STATS_SUMMARY: (id: string) => `${API_BASE_URL}/users/${id}/stats/summary`,
     MATCHESLENGTH: (id: any) => `${API_BASE_URL}/users/${id}/matches-length`,
     GETNAMES: (id: any) => `${API_BASE_URL}/users/matchesNames/${id}`,
     SEARCH: (query: string) => `${API_BASE_URL}/users/search?query=${query}`,
@@ -94,6 +95,8 @@ const API_ROUTES = {
     CREATE: `${API_BASE_URL}/leagues`,
     // Filtro de inactivas vía `apiRequest(LIST, { params: { includeInactive: 1 } })`.
     LIST: `${API_BASE_URL}/leagues`,
+    // Requiere auth: solo las ligas que el usuario puede gestionar (dueño/organizer, o todas si es admin).
+    MINE: `${API_BASE_URL}/leagues/mine`,
     DETAIL: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
@@ -124,13 +127,31 @@ export class PaymentRequiredError extends Error {
   reason?: string;
   plan?: string;
   usage?: { periodKey: string; tournamentsCreated: number; tournamentsTotal: number };
+  /** Presentes solo en `reason: 'league_member_limit_reached'` — ver `services/leagueCapGate.ts` del backend. */
+  limit?: number;
+  current?: number;
+  /** `false` cuando quien rebotó no es el dueño del plan: no tiene sentido ofrecerle upgrade. */
+  canUpgrade?: boolean;
 
-  constructor(message: string, data: { reason?: string; plan?: string; usage?: PaymentRequiredError['usage'] }) {
+  constructor(
+    message: string,
+    data: {
+      reason?: string;
+      plan?: string;
+      usage?: PaymentRequiredError['usage'];
+      limit?: number;
+      current?: number;
+      canUpgrade?: boolean;
+    }
+  ) {
     super(message);
     this.name = 'PaymentRequiredError';
     this.reason = data.reason;
     this.plan = data.plan;
     this.usage = data.usage;
+    this.limit = data.limit;
+    this.current = data.current;
+    this.canUpgrade = data.canUpgrade;
   }
 }
 
@@ -224,7 +245,10 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
         throw new PaymentRequiredError(errorMessage, {
           reason: parsedData?.reason,
           plan: parsedData?.plan,
-          usage: parsedData?.usage
+          usage: parsedData?.usage,
+          limit: parsedData?.limit,
+          current: parsedData?.current,
+          canUpgrade: parsedData?.canUpgrade
         });
       }
 

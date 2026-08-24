@@ -15,9 +15,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
 import LogoUploader from '../../components/LogoUploader';
-import API_ROUTES, { apiRequest } from '../../config/api';
+import TeamCountSelector from '../../components/TeamCountSelector';
+import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
+import PlanLimitAlert from '../../components/PlanLimitAlert';
 import useCurrentUser from '../../hooks/useCurrentUser';
-import { canManageLeague } from '../../utils/leaguePermissions';
+import { clearBillingCache } from '../../hooks/useBilling';
 import { toDateTimeLocalInput, fromDateTimeLocalInput } from '../../utils/dateInput';
 import { LeagueListItem } from '../../types/league';
 import { TeamFormationMode, TournamentLogoMeta } from '../../types/tournament';
@@ -36,6 +38,7 @@ interface TournamentDetail {
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
   guestDrawMode: GuestDrawMode;
+  numberOfTeams: number;
   teams: unknown[];
   individualSignups: unknown[];
   logo?: TournamentLogoMeta | null;
@@ -51,6 +54,7 @@ interface EditForm {
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
   guestDrawMode: GuestDrawMode;
+  numberOfTeams: number;
   league: string;
 }
 
@@ -73,6 +77,10 @@ const EditTournament = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // 402 de cupo de liga al vincular un torneo que ya tiene jugadores (ver
+  // `services/leagueCapGate.ts` / `tournamentUpdate.ts` del backend) — se
+  // muestra aparte del error genérico porque necesita el CTA condicional.
+  const [planLimitError, setPlanLimitError] = useState<{ message: string; canUpgrade: boolean } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -88,6 +96,7 @@ const EditTournament = () => {
           format: data.format,
           teamFormationMode: data.teamFormationMode,
           guestDrawMode: data.guestDrawMode ?? 'grouped',
+          numberOfTeams: data.numberOfTeams,
           league: data.league?._id || ''
         });
         setLogo(data.logo ?? null);
@@ -100,13 +109,13 @@ const EditTournament = () => {
   }, [id]);
 
   // Mismo criterio que en CreateTournament: solo quien administra al menos
-  // una liga puede (re)asignarla. `LEAGUES.LIST` es público, se filtra en cliente.
+  // una liga puede (re)asignarla. `LEAGUES.MINE` ya filtra server-side.
   useEffect(() => {
     if (!user) return;
     (async () => {
       try {
-        const allLeagues: LeagueListItem[] = await apiRequest(API_ROUTES.LEAGUES.LIST);
-        setLeagues(allLeagues.filter((l) => canManageLeague(user, l)));
+        const manageable: LeagueListItem[] = await apiRequest(API_ROUTES.LEAGUES.MINE);
+        setLeagues(manageable);
       } catch {
         // Si falla, el selector de liga simplemente no aparece.
       }
@@ -128,6 +137,7 @@ const EditTournament = () => {
     }
     setSaving(true);
     setError('');
+    setPlanLimitError(null);
     try {
       // El endpoint público solo deja editar mientras el torneo sigue
       // `upcoming`; el de admin no tiene esa restricción (mismo criterio que
@@ -143,11 +153,20 @@ const EditTournament = () => {
           format: form.format,
           teamFormationMode: form.teamFormationMode,
           guestDrawMode: form.guestDrawMode,
+          numberOfTeams: form.numberOfTeams,
           league: form.league || null
         })
       });
       navigate(`/tournaments/${id}`);
     } catch (err) {
+      // Vincular una liga nueva puede sumarle de golpe todos los
+      // participantes del torneo — si supera el cupo de jugadores del plan,
+      // el backend responde 402 con el detalle (ver `leagueCapGate.ts`).
+      if (err instanceof PaymentRequiredError && err.reason === 'league_member_limit_reached') {
+        clearBillingCache();
+        setPlanLimitError({ message: err.message, canUpgrade: !!err.canUpgrade });
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Error al actualizar el torneo');
     } finally {
       setSaving(false);
@@ -225,6 +244,14 @@ const EditTournament = () => {
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {planLimitError && (
+            <PlanLimitAlert
+              sx={{ mb: 2 }}
+              severity="error"
+              message={planLimitError.message}
+              canUpgrade={planLimitError.canUpgrade}
+            />
+          )}
 
           <form onSubmit={handleSubmit}>
             <TextField
@@ -322,6 +349,18 @@ const EditTournament = () => {
                 </Typography>
               )}
             </Box>
+
+            <TeamCountSelector
+              value={form.numberOfTeams}
+              onChange={(numberOfTeams) => setForm({ ...form, numberOfTeams })}
+              teamSize={form.format === 'duos' ? 2 : 3}
+            />
+            {hasParticipants && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -1, mb: 2 }}>
+                Con equipos ya cargados se puede agrandar el cuadro, pero no achicarlo por debajo de lo
+                que ya está inscripto.
+              </Typography>
+            )}
 
             <Box sx={{ my: 2 }}>
               <Typography variant="subtitle1" gutterBottom>

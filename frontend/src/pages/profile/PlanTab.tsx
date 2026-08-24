@@ -331,6 +331,31 @@ const PlanTab = () => {
                 </>
               )}
             </Box>
+
+            {billing.limits.maxLeagues > 0 && (
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                  Jugadores por liga
+                </Typography>
+                {billing.limits.maxMembers === null ? (
+                  <Typography variant="body2">
+                    {billing.usage.playersInLargestLeague} jugadores · sin límite
+                  </Typography>
+                ) : (
+                  <>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, (billing.usage.playersInLargestLeague / billing.limits.maxMembers) * 100)}
+                      color={billing.usage.playersInLargestLeague > billing.limits.maxMembers ? 'error' : 'primary'}
+                      sx={{ height: 8, borderRadius: 4, mb: 0.5 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      {billing.usage.playersInLargestLeague} de {billing.limits.maxMembers} (en tu liga más grande)
+                    </Typography>
+                  </>
+                )}
+              </Box>
+            )}
           </Box>
         )}
       </SurfaceCard>

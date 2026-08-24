@@ -33,6 +33,7 @@ import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import LeagueStandingsTable from '../../components/LeagueStandingsTable';
 import LeagueTournamentPicker from '../../components/LeagueTournamentPicker';
+import PlanLimitAlert from '../../components/PlanLimitAlert';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling from '../../hooks/useBilling';
@@ -184,7 +185,7 @@ const LeagueDetails = () => {
 
   if (!data) return null;
 
-  const { league, tournaments, standings, guestCount } = data;
+  const { league, tournaments, standings, guestCount, playerCounts } = data;
   const canManage = canManageLeague(user, league);
   // El medidor de uso es del PLAN DEL DUEÑO, no de quien mira la página: un
   // organizador tiene su propio billing (o ninguno), que no tiene nada que
@@ -258,35 +259,38 @@ const LeagueDetails = () => {
                 </Typography>
               </Box>
               <Box>
-                <Typography variant="body2" color="text.secondary">Jugadores registrados</Typography>
+                <Typography variant="body2" color="text.secondary">Jugadores de la liga</Typography>
                 <Typography
                   variant="h6"
                   color={
-                    billing.limits.maxMembers !== null &&
-                    standings.filter((s) => !s.isGuest).length > billing.limits.maxMembers
+                    billing.limits.maxMembers !== null && playerCounts.playerCount > billing.limits.maxMembers
                       ? 'error'
                       : 'text.primary'
                   }
                 >
-                  {standings.filter((s) => !s.isGuest).length}
+                  {playerCounts.playerCount}
                   {billing.limits.maxMembers !== null && ` de ${billing.limits.maxMembers}`}
                 </Typography>
               </Box>
             </Box>
-            {billing.limits.maxMembers !== null &&
-              standings.filter((s) => !s.isGuest).length > billing.limits.maxMembers && (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  Superaste el cupo de jugadores de tu plan. Las inscripciones siguen funcionando igual;
-                  pasate a un plan superior cuando quieras destrabar el resto de los beneficios.{' '}
-                  <Button size="small" onClick={() => navigate('/planes')}>Ver planes</Button>
-                </Alert>
-              )}
+            {billing.limits.maxMembers !== null && playerCounts.playerCount >= billing.limits.maxMembers && (
+              <PlanLimitAlert
+                sx={{ mt: 2 }}
+                canUpgrade
+                message={
+                  playerCounts.playerCount > billing.limits.maxMembers
+                    ? 'Superaste el cupo de jugadores de tu plan: las nuevas inscripciones a esta liga están bloqueadas hasta que subas de plan.'
+                    : 'Llegaste al cupo de jugadores de tu plan: la próxima persona que intente anotarse en esta liga va a rebotar.'
+                }
+              />
+            )}
             {!billing.isActive && (
-              <Alert severity="error" sx={{ mt: 2 }}>
-                Tu suscripción venció. Podés seguir gestionando tus torneos en curso, pero no crear uno nuevo
-                hasta reactivarla.{' '}
-                <Button size="small" onClick={() => navigate('/planes')}>Ver planes</Button>
-              </Alert>
+              <PlanLimitAlert
+                sx={{ mt: 2 }}
+                severity="error"
+                canUpgrade
+                message="Tu suscripción venció. Podés seguir gestionando tus torneos en curso, pero no crear uno nuevo hasta reactivarla."
+              />
             )}
           </SurfaceCard>
         )}

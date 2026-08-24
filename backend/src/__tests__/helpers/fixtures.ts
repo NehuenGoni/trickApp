@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import request from "supertest";
 import app from "../../app";
 import User, { UserRole } from "../../models/User";
+import Match, { IMatch } from "../../models/Match";
 import { ROLES } from "../../config/constants";
 
 /**
@@ -39,17 +40,23 @@ export interface FullTournamentResult {
 }
 
 /**
- * Arma un torneo real de 8 equipos de principio a fin usando los endpoints
- * reales (create → addGuestTeam ×8 → draw → start), tal como lo haría un
- * usuario. Los jugadores son usuarios REGISTRADOS (no invitados) para poder
- * ejercitar `awardTournamentPoints`, que solo suma al ranking global a
- * jugadores con `playerId` y `isGuest: false`.
+ * Arma un torneo real de `numberOfTeams` equipos (8 por default, el tamaño de
+ * siempre) de principio a fin usando los endpoints reales (create →
+ * addGuestTeam ×N → draw → start), tal como lo haría un usuario. Los
+ * jugadores son usuarios REGISTRADOS (no invitados) para poder ejercitar
+ * `awardTournamentPoints`, que solo suma al ranking global a jugadores con
+ * `playerId` y `isGuest: false`.
  *
- * Deja el bracket armado (12 partidos) sin jugar ningún partido todavía,
- * para que cada test decida qué resultados cargar.
+ * Deja el bracket armado (sin jugar ningún partido todavía) para que cada
+ * test decida qué resultados cargar. Con `numberOfTeams` que no es potencia
+ * de 2, el sorteo deja equipos descansando en la 1ra ronda: como acá se usa
+ * siempre `mode: "random"` con el sorteo ya guardado (`/draw` antes de
+ * `/start`), eso lo resuelve el propio `startTournament` sin que el fixture
+ * tenga que saber nada de descansos.
  */
 export const buildStartedTournament = async (
-  type: "grand-slam" | "master-1000" = "grand-slam"
+  type: "grand-slam" | "master-1000" = "grand-slam",
+  numberOfTeams = 8
 ): Promise<FullTournamentResult> => {
   const { userId: creatorId, token: creatorToken } = await createUserWithToken();
   const auth = authed(creatorToken);
@@ -60,7 +67,8 @@ export const buildStartedTournament = async (
       startDate: new Date().toISOString(),
       type,
       format: "duos",
-      teamFormationMode: "user-formed"
+      teamFormationMode: "user-formed",
+      numberOfTeams
     })
   );
   if (createRes.status !== 201) {
@@ -69,7 +77,7 @@ export const buildStartedTournament = async (
   const tournamentId = createRes.body._id as string;
 
   const playerIds: string[] = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < numberOfTeams; i++) {
     const playerA = await createUserWithToken({ username: `p${i}a` });
     const playerB = await createUserWithToken({ username: `p${i}b` });
     playerIds.push(playerA.userId, playerB.userId);
@@ -126,17 +134,83 @@ export const finishMatchAsFirstTeam = async (
 };
 
 /**
- * Juega el bracket completo en orden topológico (QF → SF → finales),
- * siempre haciendo ganar al primer equipo de cada partido. Devuelve el mismo
+ * Juega el bracket completo, siempre haciendo ganar al primer equipo de cada
+ * partido. En vez de un orden de slots fijo (que solo tiene sentido para el
+ * cuadro legacy de 8 equipos), en cada vuelta busca todos los partidos que ya
+ * están `in_progress` (2 equipos asignados) y los termina; repite hasta que
+ * no quede ninguno — así funciona igual para cualquier `numberOfTeams`,
+ * incluidos los cuadros con descansos en la 1ra ronda. Devuelve el mismo
  * fixture para encadenar aserciones sobre el torneo ya cerrado.
  */
 export const playFullBracket = async (fixture: FullTournamentResult): Promise<void> => {
-  const order = ["QF1", "QF2", "QF3", "QF4", "SFG1", "SFG2", "SFS1", "SFS2", "FG", "FS", "M34", "M78"];
-  for (const slot of order) {
-    const matchId = fixture.matchIdBySlot[slot];
-    const result = await finishMatchAsFirstTeam(matchId, fixture.creatorToken);
-    if (result.status !== 200) {
-      throw new Error(`No se pudo finalizar ${slot}: ${result.status} ${JSON.stringify(result.body)}`);
+  const MAX_ROUNDS = 20; // más que de sobra: hasta 32 equipos son 5 rondas.
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const matchesRes = await request(app).get(`/matches/tournament/${fixture.tournamentId}`);
+    const inProgress = (matchesRes.body as Array<{ _id: string; status: string }>).filter(
+      (m) => m.status === "in_progress"
+    );
+    if (inProgress.length === 0) return;
+    for (const m of inProgress) {
+      const result = await finishMatchAsFirstTeam(m._id, fixture.creatorToken);
+      if (result.status !== 200) {
+        throw new Error(`No se pudo finalizar ${m._id}: ${result.status} ${JSON.stringify(result.body)}`);
+      }
     }
   }
+  throw new Error("playFullBracket: no terminó en las rondas esperadas, ¿el cuadro quedó mal armado?");
+};
+
+export interface FixturePlayer {
+  playerId?: string;
+  username?: string;
+  isGuest?: boolean;
+}
+
+/**
+ * Crea un `Match` directamente en Mongo (sin pasar por los endpoints), para
+ * los tests de `utils/userStats.ts` que necesitan controlar `winner`,
+ * `score` y `createdAt` con precisión. `winner` decide el equipo ganador por
+ * su letra ('A' o 'B'); si se omite, el match queda sin winner (para probar
+ * `discardedMatches`).
+ */
+export const createFinishedMatch = async (opts: {
+  teamAPlayers: FixturePlayer[];
+  teamBPlayers: FixturePlayer[];
+  scoreA?: number;
+  scoreB?: number;
+  winner?: "A" | "B";
+  status?: "finished" | "in_progress" | "pending";
+  type?: "friendly" | "tournament";
+  createdAt?: Date;
+}): Promise<IMatch> => {
+  const teamAId = new mongoose.Types.ObjectId();
+  const teamBId = new mongoose.Types.ObjectId();
+
+  const toMatchPlayers = (players: FixturePlayer[]) =>
+    players.map((p) => ({
+      playerId: p.playerId ? new mongoose.Types.ObjectId(p.playerId) : undefined,
+      username: p.username ?? (p.playerId ? undefined : "Invitado"),
+      isGuest: p.isGuest ?? !p.playerId
+    }));
+
+  const match = await Match.create({
+    teams: [
+      { teamId: teamAId, score: opts.scoreA ?? 0, players: toMatchPlayers(opts.teamAPlayers) },
+      { teamId: teamBId, score: opts.scoreB ?? 0, players: toMatchPlayers(opts.teamBPlayers) }
+    ],
+    winner: opts.winner === "A" ? teamAId : opts.winner === "B" ? teamBId : undefined,
+    status: opts.status ?? "finished",
+    type: opts.type ?? "friendly",
+    createdAt: opts.createdAt ?? new Date()
+  });
+
+  // createdAt tiene `default: Date.now` en el schema y `timestamps: true` lo
+  // pisa al guardar; forzarlo con una segunda escritura si se pidió una fecha
+  // específica (necesario para los tests de rachas/actividad).
+  if (opts.createdAt) {
+    await Match.updateOne({ _id: match._id }, { $set: { createdAt: opts.createdAt } });
+    match.createdAt = opts.createdAt;
+  }
+
+  return match;
 };

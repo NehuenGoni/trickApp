@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import User from "../models/User";
 import Match from "../models/Match";
+import { computeUserStats, getUserMatchesPage } from "../utils/userStats";
 
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -47,23 +48,31 @@ export const getUserMatches = async (req: Request, res: Response): Promise<void>
     const { id } = req.params;
     const skip = parseInt(req.query.skip as string) || 0;
     const limit = parseInt(req.query.limit as string) || 10;
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const type = typeof req.query.type === "string" ? req.query.type : undefined;
 
-    const matches = await Match.find({
-      "teams.players.playerId": id
-    })
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-    if (!matches || matches.length === 0) {
-      res.status(404).json({ message: "No se encontraron partidos para este usuario" });
-      return;
-    }
-    res.status(200).json(matches);
+    const page = await getUserMatchesPage(id, { skip, limit, status, type });
+    // 200 con lista vacía en vez de 404: no tener partidos no es un error,
+    // y un 404 acá le impedía al front distinguir "sin partidos" de una
+    // falla real de red.
+    res.status(200).json(page);
   } catch (error: any) {
     res.status(500).json({ message: 'Error al obtener stats del jugador', error: error.message })
   }
 }
+
+export const getUserStatsSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const minPlayedRaw = parseInt(req.query.minPlayed as string);
+    const minPlayedTogether = Number.isFinite(minPlayedRaw) ? Math.min(20, Math.max(1, minPlayedRaw)) : undefined;
+
+    const summary = await computeUserStats(id, { minPlayedTogether });
+    res.status(200).json(summary);
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error al obtener el resumen de estadísticas', error: error.message });
+  }
+};
 
 export const getUserMatchesLength = async (req: Request, res: Response): Promise<void> => {
   try {

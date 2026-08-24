@@ -1,15 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Alert, Box, Chip, CircularProgress, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Checkbox,
+  Chip,
+  CircularProgress,
+  IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Typography
+} from '@mui/material';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useLiveTournament, LiveTournamentData } from '../../hooks/useLiveTournament';
 import TournamentLogo from '../../components/TournamentLogo';
 import SceneTransition from './SceneTransition';
-import SceneLiveMatches, { isSceneVisible as liveMatchesVisible } from './scenes/SceneLiveMatches';
+import SceneLiveMatches, { isSceneVisible as liveMatchesVisible, getPageCount as liveMatchesPageCount } from './scenes/SceneLiveMatches';
 import SceneBracket, { isSceneVisible as bracketVisible } from './scenes/SceneBracket';
 import SceneTeams, { isSceneVisible as teamsVisible } from './scenes/SceneTeams';
 import { pulseDotSx } from './pulseDot';
+import { useLiveScenePrefs, LiveSceneId } from './useLiveScenePrefs';
 
-const ROTATE_MS = 15000;
+const ROTATE_MS = 15000; // cambio de escena
+const PAGE_ROTATE_MS = 10000; // cambio de página dentro de la misma escena (ver SceneLiveMatches)
 const HELP_HIDE_MS = 5000;
 const COLOR_LIVE = '#E53935';
 const COLOR_STALE = '#F5A623';
@@ -20,16 +34,50 @@ const TOURNAMENT_TYPE_LABEL: Record<string, string> = {
 };
 
 interface SceneDef {
-  id: 'live' | 'bracket' | 'teams';
+  id: LiveSceneId;
+  label: string;
   visible: (data: LiveTournamentData) => boolean;
-  render: (data: LiveTournamentData) => React.ReactNode;
+  // Cuántas "páginas" tiene la escena (p. ej. partidos en vivo paginados de
+  // a 4). Ausente = 1. El rotador le da un turno a cada página.
+  pageCount?: (data: LiveTournamentData) => number;
+  render: (data: LiveTournamentData, page: number) => React.ReactNode;
 }
 
 const SCENES: SceneDef[] = [
-  { id: 'live', visible: liveMatchesVisible, render: (d) => <SceneLiveMatches matches={d.matches} /> },
-  { id: 'bracket', visible: bracketVisible, render: (d) => <SceneBracket matches={d.matches} /> },
-  { id: 'teams', visible: teamsVisible, render: (d) => <SceneTeams data={d} /> }
+  {
+    id: 'live',
+    label: 'Partidos en vivo',
+    visible: liveMatchesVisible,
+    pageCount: liveMatchesPageCount,
+    render: (d, page) => <SceneLiveMatches matches={d.matches} page={page} />
+  },
+  { id: 'bracket', label: 'Llave del torneo', visible: bracketVisible, render: (d) => <SceneBracket matches={d.matches} /> },
+  { id: 'teams', label: 'Equipos', visible: teamsVisible, render: (d) => <SceneTeams data={d} /> }
 ];
+
+// Una escena expandida a sus páginas: el rotador y los dots navegan sobre
+// slots, no sobre escenas, para que "partidos en vivo" con 8 partidos
+// consuma 2 turnos en vez de mostrar solo la primera página.
+interface SceneSlot {
+  key: string;
+  sceneId: SceneDef['id'];
+  page: number;
+  scene: SceneDef;
+}
+
+// `enabledIds` es la preferencia del dispositivo (ver useLiveScenePrefs):
+// una escena solo entra a la rotación si el torneo tiene contenido para
+// mostrarla (visible) Y el usuario no la desactivó desde el menú de ajustes.
+const buildSlots = (data: LiveTournamentData, enabledIds: LiveSceneId[]): SceneSlot[] =>
+  SCENES.filter((s) => enabledIds.includes(s.id) && s.visible(data)).flatMap((scene) => {
+    const pages = scene.pageCount?.(data) ?? 1;
+    return Array.from({ length: pages }, (_, page) => ({
+      key: `${scene.id}-${page}`,
+      sceneId: scene.id,
+      page,
+      scene
+    }));
+  });
 
 const FullscreenMessage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Box
@@ -54,7 +102,7 @@ const LiveTournament: React.FC = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const { data, status, secondsSinceUpdate } = useLiveTournament(tournamentId);
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const [direction, setDirection] = useState<1 | -1 | 0>(0);
   const [paused, setPaused] = useState(false);
   const [showHelp, setShowHelp] = useState(true);
@@ -62,33 +110,66 @@ const LiveTournament: React.FC = () => {
   const rotateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const helpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const visibleScenes = useMemo(
-    () => (data ? SCENES.filter((s) => s.visible(data)) : []),
-    [data]
-  );
+  const { enabled: enabledSceneIds, toggle: toggleScene } = useLiveScenePrefs();
+  const [settingsAnchor, setSettingsAnchor] = useState<HTMLElement | null>(null);
 
-  // Si la escena activa deja de existir (por ejemplo, terminó el último
-  // partido en vivo y esa escena desaparece), volvemos a un índice válido en
-  // vez de quedar mostrando una pantalla vacía.
+  const slots = useMemo(() => (data ? buildSlots(data, enabledSceneIds) : []), [data, enabledSceneIds]);
+
+  // Índice por clave (no por posición numérica): si el polling cambia la
+  // cantidad de partidos en vivo, la cantidad de páginas cambia con ella, y
+  // un índice numérico fijo pasaría a apuntar a otra escena. La clave
+  // mantiene al espectador en la misma escena/página mientras siga existiendo.
+  const activeIndex = activeKey ? Math.max(0, slots.findIndex((s) => s.key === activeKey)) : 0;
+  const activeSlot = slots[activeIndex];
+
+  // Si el slot activo deja de existir (por ejemplo, terminó el último
+  // partido en vivo y esa página desaparece), volvemos al primero en vez de
+  // quedar mostrando una pantalla vacía.
   useEffect(() => {
-    if (activeIndex >= visibleScenes.length && visibleScenes.length > 0) {
-      setActiveIndex(0);
+    if (slots.length === 0) return;
+    if (!activeKey || !slots.some((s) => s.key === activeKey)) {
+      setActiveKey(slots[0].key);
       setDirection(0);
     }
-  }, [visibleScenes.length, activeIndex]);
+  }, [slots, activeKey]);
 
-  // Rotación automática entre escenas.
+  // Rotación automática entre escenas/páginas. El salto a otra página de la
+  // misma escena (partidos en vivo paginados) es más corto que el salto a
+  // otra escena, para no demorar tanto en mostrar el resto de los partidos.
   useEffect(() => {
-    if (paused || visibleScenes.length <= 1) return;
+    if (paused || slots.length <= 1 || !activeSlot) return;
+    const nextSlot = slots[(activeIndex + 1) % slots.length];
+    const delay = nextSlot.sceneId === activeSlot.sceneId ? PAGE_ROTATE_MS : ROTATE_MS;
     rotateTimerRef.current = setTimeout(() => {
       setDirection(0);
-      setActiveIndex((i) => (i + 1) % visibleScenes.length);
-    }, ROTATE_MS);
+      setActiveKey(nextSlot.key);
+    }, delay);
     return () => {
       if (rotateTimerRef.current) clearTimeout(rotateTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, paused, visibleScenes.length]);
+  }, [activeKey, paused, slots]);
+
+  // Afordancia de scroll: cuando el contenido de la escena no entra entero,
+  // mostramos un degradado pegado al borde inferior para que se note que hay
+  // más para ver scrolleando (si no, el usuario nunca se entera de que puede).
+  const sceneContainerRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+
+  const updateScrollAffordance = useCallback(() => {
+    const el = sceneContainerRef.current;
+    if (!el) return;
+    setCanScrollDown(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  }, []);
+
+  useEffect(() => {
+    updateScrollAffordance();
+    const el = sceneContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateScrollAffordance);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateScrollAffordance, activeSlot, data]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -108,18 +189,24 @@ const LiveTournament: React.FC = () => {
   }, []);
 
   const goNext = useCallback(() => {
-    if (!visibleScenes.length) return;
+    if (!slots.length) return;
     setDirection(1);
     setPaused(true);
-    setActiveIndex((i) => (i + 1) % visibleScenes.length);
-  }, [visibleScenes.length]);
+    setActiveKey((key) => {
+      const i = key ? Math.max(0, slots.findIndex((s) => s.key === key)) : 0;
+      return slots[(i + 1) % slots.length].key;
+    });
+  }, [slots]);
 
   const goPrev = useCallback(() => {
-    if (!visibleScenes.length) return;
+    if (!slots.length) return;
     setDirection(-1);
     setPaused(true);
-    setActiveIndex((i) => (i - 1 + visibleScenes.length) % visibleScenes.length);
-  }, [visibleScenes.length]);
+    setActiveKey((key) => {
+      const i = key ? Math.max(0, slots.findIndex((s) => s.key === key)) : 0;
+      return slots[(i - 1 + slots.length) % slots.length].key;
+    });
+  }, [slots]);
 
   useEffect(() => {
     revealHelp();
@@ -196,7 +283,6 @@ const LiveTournament: React.FC = () => {
     );
   }
 
-  const activeScene = visibleScenes[activeIndex];
   const stale = secondsSinceUpdate !== null && secondsSinceUpdate > 10;
   const isDegraded = status === 'reconnecting' || stale;
   const liveColor = isDegraded ? COLOR_STALE : COLOR_LIVE;
@@ -255,38 +341,95 @@ const LiveTournament: React.FC = () => {
             sx={{ bgcolor: 'rgba(212,175,55,0.15)', color: '#D4AF37', fontWeight: 600, flexShrink: 0 }}
           />
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-          <Box sx={pulseDotSx(liveColor, !isDegraded)} />
-          <Typography
-            noWrap
-            sx={{ fontSize: 'clamp(0.65rem, 1vw, 0.85rem)', fontWeight: 700, letterSpacing: 1, color: liveColor }}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={pulseDotSx(liveColor, !isDegraded)} />
+            <Typography
+              noWrap
+              sx={{ fontSize: 'clamp(0.65rem, 1vw, 0.85rem)', fontWeight: 700, letterSpacing: 1, color: liveColor }}
+            >
+              {liveLabel}
+            </Typography>
+          </Box>
+          <IconButton
+            size="small"
+            aria-label="Elegir pantallas"
+            onClick={(e) => setSettingsAnchor(e.currentTarget)}
+            sx={{ color: 'text.secondary' }}
           >
-            {liveLabel}
-          </Typography>
+            <SettingsIcon fontSize="small" />
+          </IconButton>
+          <Menu
+            anchorEl={settingsAnchor}
+            open={Boolean(settingsAnchor)}
+            onClose={() => setSettingsAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <Typography sx={{ px: 2, py: 1, color: 'text.secondary', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 0.5 }}>
+              PANTALLAS A MOSTRAR
+            </Typography>
+            {SCENES.map((scene) => {
+              const checked = enabledSceneIds.includes(scene.id);
+              return (
+                <MenuItem
+                  key={scene.id}
+                  onClick={() => toggleScene(scene.id)}
+                  disabled={checked && enabledSceneIds.length === 1}
+                  dense
+                >
+                  <Checkbox checked={checked} size="small" sx={{ p: 0, mr: 1.5 }} />
+                  <ListItemText primary={scene.label} />
+                </MenuItem>
+              );
+            })}
+          </Menu>
         </Box>
       </Box>
 
       <Box
+        ref={sceneContainerRef}
+        onScroll={updateScrollAffordance}
         sx={{
           flex: 1,
           minHeight: 0,
+          position: 'relative',
           display: 'flex',
           justifyContent: 'center',
-          overflowY: { xs: 'visible', md: 'hidden' },
+          // A diferencia del modo anterior (overflow: hidden), acá el
+          // contenido que no entra queda alcanzable con scroll en vez de
+          // recortado en silencio; el degradado de abajo avisa que hay más.
+          overflowY: 'auto',
           overflowX: 'hidden',
-          py: { xs: 2, md: 0 }
+          py: { xs: 2, md: 0 },
+          '&::-webkit-scrollbar': { width: 8 },
+          '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.18)', borderRadius: 4 },
+          scrollbarWidth: 'thin'
         }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {activeScene ? (
-          <SceneTransition key={activeScene.id} direction={direction}>
-            {activeScene.render(data)}
+        {activeSlot ? (
+          <SceneTransition key={activeSlot.key} direction={direction}>
+            {activeSlot.scene.render(data, activeSlot.page)}
           </SceneTransition>
         ) : (
           <Typography sx={{ color: 'text.secondary', textAlign: 'center', px: 4 }}>
             El torneo todavía no tiene partidos para mostrar.
           </Typography>
+        )}
+        {canScrollDown && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 56,
+              pointerEvents: 'none',
+              background: (theme) => `linear-gradient(transparent, ${theme.palette.background.default})`
+            }}
+          />
         )}
       </Box>
 
@@ -302,11 +445,11 @@ const LiveTournament: React.FC = () => {
           transition: 'opacity 400ms ease'
         }}
       >
-        {visibleScenes.length > 1 && (
+        {slots.length > 1 && (
           <Box sx={{ display: 'flex', gap: 1 }}>
-            {visibleScenes.map((s, i) => (
+            {slots.map((s, i) => (
               <Box
-                key={s.id}
+                key={s.key}
                 sx={{
                   width: i === activeIndex ? 20 : 8,
                   height: 8,

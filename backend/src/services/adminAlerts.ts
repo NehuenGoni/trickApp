@@ -140,6 +140,43 @@ export const notifyAdminPlanLimitHit = async (params: {
 };
 
 // ---------------------------------------------------------------------------
+// Cupo de jugadores por liga alcanzado — misma idea que el límite de
+// torneos, pero con su propio shape (no hay "usage" de torneos acá). No
+// reusa `notifyAdminPlanLimitHit` porque `IBilling["usage"]` no tiene ni
+// remotamente los campos que importan en este motivo (jugadores actuales /
+// cupo del plan, no torneos del mes).
+// ---------------------------------------------------------------------------
+
+export const notifyAdminLeagueCapHit = async (params: {
+  ownerId: string;
+  plan: string;
+  current: number;
+  limit: number;
+}): Promise<void> => {
+  if (!shouldAlert(`limit:${params.ownerId}:league_member_limit_reached`, 24 * 60 * 60 * 1000)) return;
+
+  const user = await resolveUser(params.ownerId);
+  if (!user) return;
+
+  const safeUsername = escapeHtml(user.username);
+  const safePlan = escapeHtml(params.plan);
+  const label = "Tocó el cupo de jugadores por liga de su plan (candidato a upgrade)";
+
+  await sendAdminAlert({
+    eyebrow: "Plan",
+    accent: "blue",
+    title: "Usuario tocó el cupo de jugadores de su liga",
+    summaryText: `${user.username} (${user.email}) — plan ${params.plan}. ${label}.`,
+    summaryHtml: `<strong>${safeUsername}</strong> (${escapeHtml(user.email)}) — plan <strong>${safePlan}</strong>.`,
+    rows: [
+      { label: "Motivo", value: escapeHtml(label) },
+      { label: "Jugadores actuales", value: String(params.current) },
+      { label: "Cupo del plan", value: String(params.limit) }
+    ]
+  });
+};
+
+// ---------------------------------------------------------------------------
 // Errores críticos. Sync por fuera (dispara el envío async por dentro) para
 // poder llamarse cómodo desde un `catch` sin awaitear. Throttle por `key`
 // para que un fallo en loop no inunde la casilla.

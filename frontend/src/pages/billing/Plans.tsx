@@ -25,7 +25,7 @@ import {
   Link
 } from '@mui/material';
 import { Check as CheckIcon } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
@@ -41,23 +41,42 @@ const formatLimit = (value: number | null, singular: string, plural: string): st
   return `${value} ${value === 1 ? singular : plural}`;
 };
 
-const planFeatures = (plan: PricingPlan): string[] => {
+interface PlanFeature {
+  text: string;
+  /** El cupo de jugadores por liga: el eje que más determina qué plan te queda chico. */
+  emphasized?: boolean;
+}
+
+const planFeatures = (plan: PricingPlan): PlanFeature[] => {
   if (plan.id === 'free') {
-    return ['Partidos sueltos y contador de truco, gratis siempre', '1 torneo de prueba, de por vida', 'Tabla pública compartible de ese torneo'];
+    return [
+      { text: 'Partidos sueltos y contador de truco, gratis siempre' },
+      { text: '1 torneo de prueba, de por vida' },
+      { text: 'Tabla pública compartible de ese torneo' },
+      { text: 'No incluye ligas' }
+    ];
   }
   const { limits } = plan;
-  const features = [
-    `${formatLimit(limits.tournamentsPerMonth, 'torneo', 'torneos')} por mes`,
-    `Hasta ${formatLimit(limits.maxLeagues, 'liga', 'ligas')}`,
-    `${formatLimit(limits.maxMembers, 'jugador', 'jugadores')} por liga`,
-    limits.maxOrganizers === 0 ? 'Sin organizadores adicionales' : `${formatLimit(limits.maxOrganizers, 'organizador', 'organizadores')} además de vos`,
-    'Tabla pública compartible'
+  const features: PlanFeature[] = [
+    { text: `${formatLimit(limits.maxMembers, 'jugador', 'jugadores')} por liga`, emphasized: true },
+    { text: `${formatLimit(limits.tournamentsPerMonth, 'torneo', 'torneos')} por mes` },
+    { text: `Hasta ${formatLimit(limits.maxLeagues, 'liga', 'ligas')}` },
+    {
+      text:
+        limits.maxOrganizers === 0
+          ? 'Sin organizadores adicionales'
+          : `${formatLimit(limits.maxOrganizers, 'organizador', 'organizadores')} además de vos`
+    },
+    { text: 'Tabla pública compartible' }
   ];
   if (plan.id === 'club' || plan.id === 'pro') {
-    features.push('Branding del logo de los torneos en la pantalla en vivo', 'Historial y exportación de temporadas');
+    features.push(
+      { text: 'Branding del logo de los torneos en la pantalla en vivo' },
+      { text: 'Historial y exportación de temporadas' }
+    );
   }
   if (plan.id === 'pro') {
-    features.push('Espacio de sponsor en la pantalla en vivo');
+    features.push({ text: 'Espacio de sponsor en la pantalla en vivo' });
   }
   return features;
 };
@@ -73,9 +92,16 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const Plans = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useCurrentUser();
   const { billing } = useBilling();
   const { plans, mercadoPagoEnabled, loading: pricingLoading } = usePricing();
+  // Mensaje que deja quien te mandó acá porque chocaste con un límite del
+  // plan (torneos, ligas, cupo de jugadores) — explica el porqué del
+  // aterrizaje en vez de dejar al usuario adivinando.
+  const [redirectMessage, setRedirectMessage] = useState(
+    () => (location.state as { message?: string } | null)?.message || ''
+  );
   const [cycle, setCycle] = useState<BillingCycle>('monthly');
   const [contactTarget, setContactTarget] = useState<PricingPlan | null>(null);
   const [emailTarget, setEmailTarget] = useState<PricingPlan | null>(null);
@@ -164,6 +190,12 @@ const Plans = () => {
           </ToggleButtonGroup>
         </Box>
 
+        {redirectMessage && (
+          <Alert severity="info" sx={{ mb: 3 }} onClose={() => setRedirectMessage('')}>
+            {redirectMessage}
+          </Alert>
+        )}
+
         {checkoutError && (
           <Alert severity="error" sx={{ mb: 3 }} onClose={() => setCheckoutError('')}>
             {checkoutError}
@@ -251,11 +283,17 @@ const Plans = () => {
 
                       <List dense sx={{ flexGrow: 1 }}>
                         {planFeatures(plan).map((feature) => (
-                          <ListItem key={feature} disableGutters sx={{ py: 0.25 }}>
+                          <ListItem key={feature.text} disableGutters sx={{ py: 0.25 }}>
                             <ListItemIcon sx={{ minWidth: 28 }}>
                               <CheckIcon fontSize="small" color="success" />
                             </ListItemIcon>
-                            <ListItemText primary={feature} primaryTypographyProps={{ variant: 'body2' }} />
+                            <ListItemText
+                              primary={feature.text}
+                              primaryTypographyProps={{
+                                variant: 'body2',
+                                fontWeight: feature.emphasized ? 700 : 400
+                              }}
+                            />
                           </ListItem>
                         ))}
                       </List>

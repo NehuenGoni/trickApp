@@ -2,6 +2,7 @@ import User, { INotificationPrefs } from "../models/User";
 import { MailContent, MailPayload, sendMail, sendMailBatch } from "../utils/mailer";
 import {
   emailVerificationEmail,
+  leagueCapReachedEmail,
   matchResultEmail,
   organizerAddedEmail,
   paymentApprovedEmail,
@@ -14,6 +15,7 @@ import {
   tournamentStartedEmail
 } from "../utils/emailTemplates";
 import { signUnsubscribeToken, UnsubscribablePref } from "../utils/unsubscribeToken";
+import { shouldAlert } from "../utils/alertThrottle";
 
 /**
  * Capa entre los controllers y `mailer.ts`. Existe porque casi ningún punto
@@ -171,6 +173,32 @@ export const notifyOrganizerAdded = async (
 ): Promise<void> => {
   const leagueUrl = buildUrl(`/leagues/${leagueId}`);
   await sendMail({ to: user.email, ...organizerAddedEmail(user.username, leagueName, leagueUrl) });
+};
+
+/**
+ * Al dueño de una liga, cuando alguien no pudo anotarse por el cupo de
+ * jugadores de su plan. Solo la llama `services/leagueCapGate.ts`, y solo
+ * cuando quien rebotó NO es el propio dueño (si fue él, ya vio el error en
+ * pantalla — el mail sería redundante).
+ *
+ * Throttle de 24h POR LIGA (no por intento ni por usuario): una liga llena
+ * puede juntar decenas de rebotes en un día y el aviso tiene que seguir
+ * siendo útil, no spam.
+ */
+export const notifyLeagueCapReached = async (
+  ownerId: string,
+  info: { leagueName: string; leagueId: string; current: number; limit: number; planLabel: string }
+): Promise<void> => {
+  if (!shouldAlert(`leaguecap:${info.leagueId}`, 24 * 60 * 60 * 1000)) return;
+
+  const owner = await resolveUser(ownerId);
+  if (!owner) return;
+
+  const leagueUrl = buildUrl(`/leagues/${info.leagueId}`);
+  const plansUrl = buildUrl(`/planes`);
+  await dispatch([owner], "leagueCapReached", (user, unsubscribeUrl) =>
+    leagueCapReachedEmail(user.username, info.leagueName, info.current, info.limit, info.planLabel, leagueUrl, plansUrl, unsubscribeUrl)
+  );
 };
 
 // ---------------------------------------------------------------------------

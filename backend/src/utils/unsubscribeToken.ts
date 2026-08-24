@@ -10,7 +10,8 @@ export type UnsubscribablePref =
   | "tournamentStart"
   | "tournamentResults"
   | "matchResults"
-  | "leagueRoles";
+  | "leagueRoles"
+  | "leagueCapReached";
 
 /**
  * Si no se configuró `UNSUBSCRIBE_SECRET`, se deriva uno de `JWT_SECRET` en

@@ -19,11 +19,12 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
+import { PlanLimitPage } from '../../components/PlanLimitAlert';
 import LogoUploader from '../../components/LogoUploader';
+import TeamCountSelector from '../../components/TeamCountSelector';
 import API_ROUTES, { apiRequest, PaymentRequiredError, EmailNotVerifiedError } from '../../config/api';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
-import { canManageLeague } from '../../utils/leaguePermissions';
 import { toDateTimeLocalInput, fromDateTimeLocalInput } from '../../utils/dateInput';
 import { LeagueListItem } from '../../types/league';
 import { TeamFormationMode } from '../../types/tournament';
@@ -56,6 +57,7 @@ interface TournamentForm {
   format: TournamentFormat;
   teamFormationMode: TeamFormationMode;
   guestDrawMode: GuestDrawMode;
+  numberOfTeams: number;
   /** '' = sin liga. Solo lo puede setear un admin (ver `canManageLeague` en el backend). */
   league: string;
 }
@@ -81,6 +83,7 @@ const CreateTournament = () => {
     format: 'duos',
     teamFormationMode: 'user-formed',
     guestDrawMode: 'grouped',
+    numberOfTeams: 8,
     league: ''
   });
   const [loading, setLoading] = useState(false);
@@ -99,14 +102,13 @@ const CreateTournament = () => {
   const [leagueParamWarning, setLeagueParamWarning] = useState(false);
 
   // Solo quien administra al menos una liga (admin, o creador de esa liga)
-  // puede asignarla; para el resto el selector ni se pide. `LEAGUES.LIST` es
-  // público, así que el fetch se hace igual y se filtra en cliente.
+  // puede asignarla; para el resto el selector ni se pide. `LEAGUES.MINE`
+  // ya filtra server-side con el mismo criterio de `canManageLeague`.
   useEffect(() => {
     if (!user) return;
     (async () => {
       try {
-        const allLeagues: LeagueListItem[] = await apiRequest(API_ROUTES.LEAGUES.LIST);
-        const manageable = allLeagues.filter((l) => canManageLeague(user, l));
+        const manageable: LeagueListItem[] = await apiRequest(API_ROUTES.LEAGUES.MINE);
         setLeagues(manageable);
 
         if (leagueParam) {
@@ -167,6 +169,7 @@ const CreateTournament = () => {
           format: formData.format,
           teamFormationMode: formData.teamFormationMode,
           guestDrawMode: formData.guestDrawMode,
+          numberOfTeams: formData.numberOfTeams,
           ...(formData.league ? { league: formData.league } : {})
         })
       });
@@ -238,8 +241,8 @@ const CreateTournament = () => {
 
   const targetParticipants =
     formData.teamFormationMode !== 'user-formed'
-      ? `${8 * (formData.format === 'duos' ? 2 : 3)} jugadores individuales`
-      : '8 equipos';
+      ? `${formData.numberOfTeams * (formData.format === 'duos' ? 2 : 3)} jugadores individuales`
+      : `${formData.numberOfTeams} equipos`;
 
   // Falla temprano: si ya sabemos que no hay cupo, no tiene sentido hacer
   // completar todo el formulario para recién ahí mostrar el 402. Los admins
@@ -249,21 +252,14 @@ const CreateTournament = () => {
     return (
       <Box>
         <NavBar />
-        <Container maxWidth="sm" sx={{ mt: 4 }}>
-          <SurfaceCard sx={{ textAlign: 'center' }}>
-            <Typography variant="h5" gutterBottom sx={{ color: '#FFD700', fontWeight: 700 }}>
-              {outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
-              {outOfFreeSlot
-                ? 'El plan gratuito incluye un torneo, de por vida. Elegí un plan para seguir creando torneos.'
-                : 'Ya usaste los torneos de este mes en tu plan actual. Pasate a un plan superior o esperá al próximo período.'}
-            </Typography>
-            <Button variant="contained" onClick={() => navigate('/planes')}>
-              Ver planes
-            </Button>
-          </SurfaceCard>
-        </Container>
+        <PlanLimitPage
+          title={outOfFreeSlot ? 'Ya usaste tu torneo de prueba' : 'Llegaste al límite de tu plan'}
+          message={
+            outOfFreeSlot
+              ? 'El plan gratuito incluye un torneo, de por vida. Elegí un plan para seguir creando torneos.'
+              : 'Ya usaste los torneos de este mes en tu plan actual. Pasate a un plan superior o esperá al próximo período.'
+          }
+        />
       </Box>
     );
   }
@@ -394,6 +390,12 @@ const CreateTournament = () => {
                   </ToggleButtonGroup>
                 </Box>
 
+                <TeamCountSelector
+                  value={formData.numberOfTeams}
+                  onChange={(numberOfTeams) => setFormData({ ...formData, numberOfTeams })}
+                  teamSize={formData.format === 'duos' ? 2 : 3}
+                />
+
                 <Box sx={{ my: 2 }}>
                   <Typography variant="subtitle1" gutterBottom>
                     Cómo se forman los equipos
@@ -479,6 +481,9 @@ const CreateTournament = () => {
                     <b>Formato:</b> {formData.format === 'duos' ? 'Duos' : 'Tríos'}
                   </Typography>
                   <Typography>
+                    <b>Cantidad de equipos:</b> {formData.numberOfTeams}
+                  </Typography>
+                  <Typography>
                     <b>Formación de equipos:</b>{' '}
                     {formData.teamFormationMode === 'user-formed'
                       ? 'Armados por jugadores'
@@ -520,9 +525,9 @@ const CreateTournament = () => {
                   type="submit"
                   variant="contained"
                   disabled={loading}
-                  startIcon={loading ? <CircularProgress size={20} /> : null}
+                  startIcon={loading ? <CircularProgress size={20} color="inherit" /> : null}
                 >
-                  Crear torneo
+                  {loading ? 'Creando torneo...' : 'Crear torneo'}
                 </Button>
               ) : (
                 <Button variant="contained" onClick={handleNext} disabled={loading}>

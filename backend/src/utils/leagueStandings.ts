@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import TournamentModel, { IPlayerStat } from "../models/Tournament";
 import User from "../models/User";
+import { playerIdentityKey } from "./playerIdentity";
 
 export interface LeagueStandingRow {
   /** "user:<id>" para registrados, "guest:<nombre normalizado>" para invitados. */
@@ -34,29 +35,16 @@ interface Accumulator {
   bestPosition: number;
 }
 
-/** trim → minúsculas → sin acentos → espacios colapsados. */
-const normalizeGuestName = (name: string): string =>
-  name
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // marcas diacríticas combinantes (acentos, tildes)
-    .replace(/\s+/g, " ");
-
 /**
- * Identidad de un participante para agrupar puntos entre torneos.
+ * Identidad de un participante para agrupar puntos entre torneos. Ver
+ * utils/playerIdentity.ts para el criterio (registrados por playerId,
+ * invitados por nombre normalizado) y sus limitaciones conocidas.
  *
- * Los usuarios registrados se agrupan por `playerId`, que es estable. Los
- * invitados no tienen cuenta (`awardTournamentPoints` los excluye del
- * ranking global justamente por eso), así que acá se agrupan por nombre
- * normalizado: es una aproximación con dos limitaciones conocidas y
- * aceptadas — dos personas distintas con el mismo nombre se fusionan en una
- * fila, y la misma persona anotada con variantes del nombre ("Juan" /
- * "Juan P.") genera filas separadas. La liga es su propia competencia y a
- * propósito no usa la misma regla que el ranking global: acá SÍ suman.
+ * Los invitados no suman al ranking global (`awardTournamentPoints` los
+ * excluye) pero la liga es su propia competencia y a propósito no usa esa
+ * misma regla: acá SÍ suman.
  */
-const statKey = (s: IPlayerStat): string =>
-  !s.isGuest && s.playerId ? `user:${s.playerId.toString()}` : `guest:${normalizeGuestName(s.name)}`;
+const statKey = (s: IPlayerStat): string => playerIdentityKey(s);
 
 export const computeLeagueStandings = async (
   leagueId: mongoose.Types.ObjectId | string

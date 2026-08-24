@@ -178,6 +178,13 @@ async function migrateUsers(db: Db, apply: boolean) {
     apply
   );
   await backfillUserTimestamps(db, apply);
+
+  if (!apply) {
+    console.log("  [dry-run] índice totalPoints_-1 → se crearía con --apply");
+  } else {
+    await db.collection("users").createIndex({ totalPoints: -1 }, { background: true });
+    console.log("  índice totalPoints_-1 → asegurado (createIndex es idempotente)");
+  }
 }
 
 async function migrateTournaments(db: Db, apply: boolean) {
@@ -245,10 +252,13 @@ async function migrateTournaments(db: Db, apply: boolean) {
   // que ningún torneo puede referenciar una liga todavía. Solo hace falta el
   // índice nuevo, que usa `computeLeagueStandings` (ver utils/leagueStandings.ts).
   if (!apply) {
-    console.log("  [dry-run] índice league_1_status_1 → se crearía con --apply");
+    console.log("  [dry-run] índices league_1_status_1 y playerStats.playerId_1_status_1 → se crearían con --apply");
   } else {
-    await db.collection("tournaments").createIndex({ league: 1, status: 1 });
-    console.log("  índice league_1_status_1 → asegurado (createIndex es idempotente)");
+    const tournaments = db.collection("tournaments");
+    await tournaments.createIndex({ league: 1, status: 1 });
+    // Trayectoria en torneos de un jugador (utils/userStats).
+    await tournaments.createIndex({ "playerStats.playerId": 1, status: 1 }, { background: true });
+    console.log("  índices league_1_status_1 y playerStats.playerId_1_status_1 → asegurados (createIndex es idempotente)");
   }
 }
 
@@ -266,13 +276,20 @@ async function migrateMatches(db: Db, apply: boolean) {
   }
 
   if (!apply) {
-    console.log("  [dry-run] índices status_1 y tournament_1_bracketSlot_1_status_1 → se crearían con --apply");
+    console.log(
+      "  [dry-run] índices status_1, tournament_1_bracketSlot_1_status_1 y teams.players.playerId_1_createdAt_-1 → se crearían con --apply"
+    );
     return;
   }
   const matches = db.collection("matches");
   await matches.createIndex({ status: 1 });
   await matches.createIndex({ tournament: 1, bracketSlot: 1, status: 1 });
-  console.log("  índices status_1 y tournament_1_bracketSlot_1_status_1 → asegurados (createIndex es idempotente)");
+  // Historial y estadísticas de un jugador (utils/userStats). Multikey sobre
+  // una colección potencialmente grande: en background para no bloquear.
+  await matches.createIndex({ "teams.players.playerId": 1, createdAt: -1 }, { background: true });
+  console.log(
+    "  índices status_1, tournament_1_bracketSlot_1_status_1 y teams.players.playerId_1_createdAt_-1 → asegurados (createIndex es idempotente)"
+  );
 }
 
 async function run() {

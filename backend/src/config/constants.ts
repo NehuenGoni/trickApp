@@ -106,7 +106,16 @@ export const FORMAT_TEAM_SIZE = {
   trios: 3
 } as const;
 
+/**
+ * Cantidad de equipos por default al crear un torneo (lo que era fijo antes de
+ * poder elegir el tamaño del cuadro). `MIN`/`MAX` acotan el selector: por
+ * abajo, un cuadro tiene que tener sentido como competencia (mínimo 2 rondas);
+ * por arriba, 32 equipos ya son 80 partidos de clasificación completa — más
+ * de eso deja de ser jugable en una jornada.
+ */
 export const TOURNAMENT_TEAMS_COUNT = 8;
+export const MIN_TOURNAMENT_TEAMS = 4;
+export const MAX_TOURNAMENT_TEAMS = 32;
 
 export const MAX_SCORE = 30;
 
@@ -161,3 +170,14 @@ export const SLOT_TO_POSITION = {
   M78_WINNER: 7,
   M78_LOSER: 8
 } as const;
+
+/**
+ * Estadísticas de usuario (utils/userStats.ts). Con menos partidos juntos el
+ * winRate de un compañero/rival solo puede dar 0/50/100%: ruido puro, no señal.
+ */
+export const USER_STATS_MIN_PLAYED_TOGETHER = 3;
+export const USER_STATS_TOP_PEERS = 20;
+/** Techo de partidos escaneados por request; ver meta.truncated. */
+export const USER_STATS_MAX_MATCHES_SCAN = 2000;
+export const USER_STATS_ACTIVITY_MONTHS = 12;
+export const USER_STATS_RECENT_FORM = 10;

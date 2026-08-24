@@ -47,6 +47,7 @@ export interface INotificationPrefs {
   tournamentResults: boolean;
   matchResults: boolean;
   leagueRoles: boolean;
+  leagueCapReached: boolean;
 }
 
 export interface IUser {
@@ -98,7 +99,8 @@ const notificationPrefsSchema = new mongoose.Schema<INotificationPrefs>({
   tournamentStart: { type: Boolean, default: true },
   tournamentResults: { type: Boolean, default: true },
   matchResults: { type: Boolean, default: false },
-  leagueRoles: { type: Boolean, default: true }
+  leagueRoles: { type: Boolean, default: true },
+  leagueCapReached: { type: Boolean, default: true }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema<IUser>({
@@ -126,6 +128,8 @@ const userSchema = new mongoose.Schema<IUser>({
 }, { timestamps: true });
 
 userSchema.index({ "billing.currentPeriodEnd": 1 });
+// Ranking global (adminTournament.getAdminStats) y userStats.globalRank.
+userSchema.index({ totalPoints: -1 });
 
 userSchema.pre("save", async function (next) {
   const user = this as mongoose.Document & IUser;
