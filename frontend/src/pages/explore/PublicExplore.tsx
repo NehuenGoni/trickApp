@@ -121,7 +121,7 @@ const PublicExplore = () => {
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                           {formatDate(t.startDate)}
-                          {t.format && ` · ${t.format === 'duos' ? 'Parejas' : 'Tríos'}`}
+                          {t.format && ` · ${t.format === 'duos' ? 'Duos' : 'Tríos'}`}
                         </Typography>
                       </SurfaceCard>
                     </Reveal>

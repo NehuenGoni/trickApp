@@ -19,11 +19,6 @@ import {
 import API_ROUTES, { apiRequest } from '../config/api';
 import { TeamFormationMode } from '../types/tournament';
 
-// Espejo de TOURNAMENT_TEAMS_COUNT en backend/src/config/constants.ts. El
-// resto del frontend también lo tiene hardcodeado en varios lugares
-// (TournamentDetails.tsx), así que no rompe ninguna convención existente.
-const TOURNAMENT_TEAMS_COUNT = 8;
-
 export interface RosterPlayer {
   signupId?: string;
   playerId?: string;
@@ -44,6 +39,8 @@ export interface TeamRosterEditorProps {
   tournamentId: string;
   mode: TeamFormationMode;
   teamSize: number;
+  /** Cantidad de equipos del cuadro (`tournament.numberOfTeams`). Default 8: el tamaño de siempre. */
+  numberOfTeams?: number;
   /** Equipos editables; el padre ya filtró los fijos (isDrawn === false). */
   teams: RosterTeam[];
   /** Inscriptos del pool que no están en ningún equipo. Vacío en user-formed. */
@@ -64,13 +61,14 @@ interface BoardState {
 const cloneTeam = (t: RosterTeam): RosterTeam => ({ ...t, players: t.players.map((p) => ({ ...p })) });
 const cloneP = (p: RosterPlayer): RosterPlayer => ({ ...p });
 
-const buildInitialTeams = (mode: TeamFormationMode, teams: RosterTeam[]): RosterTeam[] => {
+const buildInitialTeams = (mode: TeamFormationMode, teams: RosterTeam[], numberOfTeams: number): RosterTeam[] => {
   const existing = teams.map(cloneTeam);
   if (mode !== 'creator-formed') return existing;
-  // En creator-formed se editan los 8 equipos desde el arranque, así que se
-  // completan con placeholders vacíos (sin teamId, el backend les asigna uno).
+  // En creator-formed se editan los `numberOfTeams` equipos del cuadro desde
+  // el arranque, así que se completan con placeholders vacíos (sin teamId,
+  // el backend les asigna uno).
   const placeholders: RosterTeam[] = [];
-  for (let i = existing.length; i < TOURNAMENT_TEAMS_COUNT; i++) {
+  for (let i = existing.length; i < numberOfTeams; i++) {
     placeholders.push({ teamId: '', name: `Equipo ${i + 1}`, players: [] });
   }
   return [...existing, ...placeholders];
@@ -131,6 +129,7 @@ const TeamRosterEditor: React.FC<TeamRosterEditorProps> = ({
   tournamentId,
   mode,
   teamSize,
+  numberOfTeams = 8,
   teams,
   unassigned,
   hasDraft,
@@ -151,7 +150,7 @@ const TeamRosterEditor: React.FC<TeamRosterEditorProps> = ({
   // cualquier re-render mientras edita.
   useEffect(() => {
     if (!open) return;
-    setDraftTeams(buildInitialTeams(mode, teams));
+    setDraftTeams(buildInitialTeams(mode, teams, numberOfTeams));
     setBench(unassigned.map(cloneP));
     setSelected(null);
     setHint('');
@@ -204,7 +203,7 @@ const TeamRosterEditor: React.FC<TeamRosterEditorProps> = ({
   const isSelected = (ref: SlotRef) => !!selected && selected.at === ref.at && selected.index === ref.index;
 
   const handleDiscard = () => {
-    setDraftTeams(buildInitialTeams(mode, teams));
+    setDraftTeams(buildInitialTeams(mode, teams, numberOfTeams));
     setBench(unassigned.map(cloneP));
     setSelected(null);
     setHint('');
@@ -378,16 +377,12 @@ const TeamRosterEditor: React.FC<TeamRosterEditorProps> = ({
             )}
           </Box>
 
-          <Grid container spacing={1.5}>
-            {draftTeams.map((team, index) => renderTeamCard(team, index))}
-          </Grid>
-
           {allowBench && (
             <Box
               data-testid="roster-bench"
               onClick={handleTapBench}
               sx={{
-                mt: 2,
+                mb: 2,
                 p: 1.5,
                 borderRadius: 1,
                 border: '1px dashed',
@@ -409,6 +404,10 @@ const TeamRosterEditor: React.FC<TeamRosterEditorProps> = ({
               )}
             </Box>
           )}
+
+          <Grid container spacing={1.5}>
+            {draftTeams.map((team, index) => renderTeamCard(team, index))}
+          </Grid>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between', px: 3 }}>
           <Button onClick={handleDiscard} disabled={!dirty || saving}>

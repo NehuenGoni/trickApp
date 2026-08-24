@@ -46,6 +46,7 @@ check("pool-based: payload válido arma los equipos", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.CREATOR_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [s1, s2, s3]
   });
@@ -67,6 +68,7 @@ check("pool-based: jugador fuera del pool devuelve 409", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.RANDOM,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [s1]
   });
@@ -93,6 +95,7 @@ check("user-formed: falta un jugador devuelve 409", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.USER_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [t1],
     individualSignups: []
   });
@@ -129,6 +132,7 @@ check("user-formed: equipo incompleto devuelve 400", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.USER_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [t1, t2],
     individualSignups: []
   });
@@ -149,6 +153,7 @@ check("jugador duplicado entre equipos devuelve 400", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.CREATOR_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [s1]
   });
@@ -176,6 +181,7 @@ check("equipo con teamSize+1 devuelve 400", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.CREATOR_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [s1, s2, s3]
   });
@@ -198,6 +204,7 @@ check("teamId desconocido devuelve 400", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.RANDOM,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [s1]
   });
@@ -222,6 +229,7 @@ check("equipo fijo en el payload devuelve 400", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.RANDOM,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [fixed],
     individualSignups: [s1]
   });
@@ -243,6 +251,7 @@ check("dos invitados homónimos se distinguen por signupId", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.CREATOR_FORMED,
     teamSize: 2,
+    numberOfTeams: 8,
     existingTeams: [],
     individualSignups: [g1, g2]
   });
@@ -270,6 +279,7 @@ check("jugadores legacy sin signupId matchean por playerId", () => {
     payload,
     teamFormationMode: TEAM_FORMATION_MODES.USER_FORMED,
     teamSize: 1,
+    numberOfTeams: 8,
     existingTeams: [t1, t2],
     individualSignups: []
   });

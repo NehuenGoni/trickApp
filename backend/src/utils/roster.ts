@@ -29,6 +29,8 @@ export interface ValidateRosterArgs {
   payload: unknown;
   teamFormationMode: TeamFormationMode;
   teamSize: number;
+  /** `tournament.numberOfTeams`: tope de equipos del cuadro. */
+  numberOfTeams: number;
   /** `tournament.teams` tal cual están hoy en el documento. */
   existingTeams: ITeam[];
   /** `tournament.individualSignups` tal cual están hoy en el documento. */
@@ -55,15 +57,15 @@ const STALE_MESSAGE =
   "La lista de jugadores no coincide con los inscriptos del torneo. Recargá la página e intentá de nuevo.";
 
 export const validateRosterPayload = (args: ValidateRosterArgs): ValidateRosterResult => {
-  const { payload, teamFormationMode, teamSize, existingTeams, individualSignups } = args;
+  const { payload, teamFormationMode, teamSize, numberOfTeams, existingTeams, individualSignups } = args;
 
   if (!payload || typeof payload !== "object" || !Array.isArray((payload as RosterPayload).teams)) {
     return { ok: false, error: "Falta la lista de equipos", status: 400 };
   }
   const inputTeams = (payload as RosterPayload).teams;
 
-  if (inputTeams.length > 8) {
-    return { ok: false, error: "No puede haber más de 8 equipos", status: 400 };
+  if (inputTeams.length > numberOfTeams) {
+    return { ok: false, error: `No puede haber más de ${numberOfTeams} equipos`, status: 400 };
   }
 
   for (const t of inputTeams) {

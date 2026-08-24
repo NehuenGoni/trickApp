@@ -5,13 +5,18 @@ import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
   TEAM_FORMATION_MODES,
-  GUEST_DRAW_MODES
+  GUEST_DRAW_MODES,
+  FORMAT_TEAM_SIZE,
+  MIN_TOURNAMENT_TEAMS,
+  MAX_TOURNAMENT_TEAMS
 } from "../config/constants";
 import {
   resolveTournamentLeague,
   computePlayerStats,
   awardTournamentPoints,
-  revertTournamentPoints
+  revertTournamentPoints,
+  countFilledSlots,
+  isValidNumberOfTeams
 } from "../controllers/tournament.controller";
 import { enforceLeagueCap } from "./leagueCapGate";
 import { tournamentParticipants } from "../utils/leaguePlayers";
@@ -29,6 +34,7 @@ export interface TournamentUpdateBody {
   format?: string;
   teamFormationMode?: string;
   guestDrawMode?: string;
+  numberOfTeams?: number;
   league?: string | null;
 }
 
@@ -62,7 +68,8 @@ export const applyTournamentUpdate = async (
   body: TournamentUpdateBody,
   authUser?: UpdateActor
 ): Promise<UpdateResult> => {
-  const { name, description, startDate, type, format, teamFormationMode, guestDrawMode, league } = body;
+  const { name, description, startDate, type, format, teamFormationMode, guestDrawMode, numberOfTeams, league } =
+    body;
 
   if (league !== undefined) {
     const previousLeague = tournament.league ?? null;
@@ -161,6 +168,41 @@ export const applyTournamentUpdate = async (
     // Sin guarda de inscriptos: solo afecta cómo se sortean los equipos, y el
     // sorteo todavía no ocurrió mientras el torneo admite ediciones.
     tournament.guestDrawMode = guestDrawMode as GuestDrawMode;
+  }
+
+  if (numberOfTeams !== undefined && numberOfTeams !== tournament.numberOfTeams) {
+    if (!isValidNumberOfTeams(numberOfTeams)) {
+      return {
+        error: `Cantidad de equipos inválida (entre ${MIN_TOURNAMENT_TEAMS} y ${MAX_TOURNAMENT_TEAMS})`,
+        status: 400
+      };
+    }
+    // A diferencia de `format`/`teamFormationMode` (que invalidan equipos ya
+    // armados en cualquier dirección), acá el único caso realmente peligroso
+    // es ACHICAR el cuadro por debajo de lo que ya está cargado: agrandarlo
+    // con gente adentro es inofensivo, solo abre más cupo. Pero una vez que
+    // el torneo arrancó, el cuadro (los `Match` ya creados) quedó atado al N
+    // con el que se generó — cambiarlo ahora dejaría `numberOfTeams`
+    // desincronizado del cuadro real jugado, así que se bloquea sin
+    // excepción, aun para el admin.
+    if (tournament.status !== "upcoming") {
+      return {
+        error: "No se puede cambiar la cantidad de equipos de un torneo que ya empezó",
+        status: 400
+      };
+    }
+    const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    const currentOccupancy =
+      tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED
+        ? tournament.teams.length
+        : Math.ceil(countFilledSlots(tournament) / expectedSize);
+    if (numberOfTeams < currentOccupancy) {
+      return {
+        error: `No se puede bajar a ${numberOfTeams} equipos: ya hay ${currentOccupancy} cargados`,
+        status: 400
+      };
+    }
+    tournament.numberOfTeams = numberOfTeams;
   }
 
   // Cambiar el tipo cambia la tabla de puntos: si ya se habían repartido, se recalculan.

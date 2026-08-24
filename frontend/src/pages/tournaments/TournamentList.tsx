@@ -43,6 +43,7 @@ interface Tournament {
   type?: 'grand-slam' | 'master-1000';
   format?: 'duos' | 'trios';
   teamFormationMode?: TeamFormationMode;
+  numberOfTeams?: number;
   league?: LeagueRef | null;
   teams: Array<{
     teamId: string;
@@ -142,15 +143,16 @@ const TournamentList = () => {
 
   const getCapacityLabel = (t: Tournament) => {
     const teamSize = t.format === 'trios' ? 3 : 2;
+    const numberOfTeams = t.numberOfTeams ?? 8; // torneos legacy: el tamaño de siempre.
     if (t.teamFormationMode && poolBasedMode(t.teamFormationMode)) {
       // Los equipos derivados del pool (isDrawn) no se suman aparte: sus
       // jugadores ya están contados en individualSignups. Espejo de
       // `slotsFilled` en TournamentDetails.tsx.
       const fixedTeams = (t.teams || []).filter((team) => !team.isDrawn).length;
       const filled = (t.individualSignups?.length || 0) + fixedTeams * teamSize;
-      return `${filled}/${8 * teamSize} jugadores`;
+      return `${filled}/${numberOfTeams * teamSize} jugadores`;
     }
-    return `${t.teams?.length || 0}/8 equipos`;
+    return `${t.teams?.length || 0}/${numberOfTeams} equipos`;
   };
 
   const getTypeLabel = (type?: Tournament['type']) =>
@@ -306,21 +308,23 @@ const TournamentList = () => {
                       <EditIcon />
                     </IconButton>
                   )}
-                  <IconButton
-                    title="Eliminar torneo"
-                    disabled={!isAdmin && tournament.status === 'completed'}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedTournament(tournament._id);
-                      setDeleteDialogOpen(true);
-                    }}
-                    sx={{
-                      color: 'error.main',
-                      '&:hover': { backgroundColor: 'rgba(211,47,47,0.15)' },
-                    }}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  {(isAdmin || tournament.createdBy === user?._id) && (
+                    <IconButton
+                      title="Eliminar torneo"
+                      disabled={!isAdmin && tournament.status === 'completed'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTournament(tournament._id);
+                        setDeleteDialogOpen(true);
+                      }}
+                      sx={{
+                        color: 'error.main',
+                        '&:hover': { backgroundColor: 'rgba(211,47,47,0.15)' },
+                      }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  )}
                 </Box>
               </Paper>
               ))}

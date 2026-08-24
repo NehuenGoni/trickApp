@@ -83,56 +83,82 @@ export const createLeague = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+// Contadores por liga con una sola query, acotada a las ligas devueltas y
+// agrupada en JS: el volumen de torneos-con-liga no justifica una
+// aggregation pipeline. Trae también los campos de jugadores para no pagar
+// una segunda query — un solo loop calcula torneos, finalizados y
+// participantes únicos a la vez. Compartida por `getLeagues` y
+// `getManageableLeagues`, que solo difieren en el filtro de `League.find`.
+const enrichLeaguesWithStats = async (leagues: Array<Record<string, any>>) => {
+  const leagueIds = leagues.map((l) => l._id);
+
+  const tournamentsByLeague = await TournamentModel.find({ league: { $in: leagueIds } })
+    .select(`status ${TOURNAMENT_PLAYER_FIELDS}`)
+    .lean();
+  const counts = new Map<string, { tournamentCount: number; completedCount: number }>();
+  const identitiesByLeague = new Map<string, Map<string, boolean>>();
+  for (const t of tournamentsByLeague) {
+    if (!t.league) continue;
+    const key = t.league.toString();
+
+    const entry = counts.get(key) ?? { tournamentCount: 0, completedCount: 0 };
+    entry.tournamentCount += 1;
+    if (t.status === "completed") entry.completedCount += 1;
+    counts.set(key, entry);
+
+    let identities = identitiesByLeague.get(key);
+    if (!identities) {
+      identities = new Map();
+      identitiesByLeague.set(key, identities);
+    }
+    for (const [identityKey, isGuest] of collectPlayerIdentities(t)) identities.set(identityKey, isGuest);
+  }
+
+  return leagues.map((league) => {
+    const leagueKey = league._id.toString();
+    const identities = identitiesByLeague.get(leagueKey);
+    const guestCount = identities ? [...identities.values()].filter(Boolean).length : 0;
+    const playerCount = identities?.size ?? 0;
+    return {
+      ...league,
+      ...(counts.get(leagueKey) ?? { tournamentCount: 0, completedCount: 0 }),
+      playerCount,
+      registeredCount: playerCount - guestCount,
+      guestCount
+    };
+  });
+};
+
 export const getLeagues = async (req: Request, res: Response): Promise<void> => {
   try {
     const includeInactive = req.query.includeInactive === "1" || req.query.includeInactive === "true";
     const filter = includeInactive ? {} : { isActive: true };
 
     const leagues = await League.find(filter).sort({ startDate: -1 }).lean();
-    const leagueIds = leagues.map((l) => l._id);
+    res.status(200).json(await enrichLeaguesWithStats(leagues));
+  } catch (error: any) {
+    res.status(500).json({ message: "Error al obtener las ligas", error: error.message });
+  }
+};
 
-    // Contadores por liga con una sola query, acotada a las ligas devueltas y
-    // agrupada en JS: el volumen de torneos-con-liga no justifica una
-    // aggregation pipeline. Trae también los campos de jugadores para no
-    // pagar una segunda query — un solo loop calcula torneos, finalizados y
-    // participantes únicos a la vez.
-    const tournamentsByLeague = await TournamentModel.find({ league: { $in: leagueIds } })
-      .select(`status ${TOURNAMENT_PLAYER_FIELDS}`)
-      .lean();
-    const counts = new Map<string, { tournamentCount: number; completedCount: number }>();
-    const identitiesByLeague = new Map<string, Map<string, boolean>>();
-    for (const t of tournamentsByLeague) {
-      if (!t.league) continue;
-      const key = t.league.toString();
+// Igual que `getLeagues`, pero acotado a las ligas que el usuario autenticado
+// puede gestionar (mismo criterio que `canManageLeague`): admin/superadmin ve
+// todas, cualquier otro usuario solo las que creó o donde es organizer. A
+// diferencia de `GET /leagues`, esta ruta requiere `authMiddleware` — es el
+// filtro server-side que usa el selector de liga al crear/editar un torneo,
+// en vez de confiar solo en el filtro client-side.
+export const getManageableLeagues = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const includeInactive = req.query.includeInactive === "1" || req.query.includeInactive === "true";
+    const activeFilter = includeInactive ? {} : { isActive: true };
+    const actor = req.authUser!;
 
-      const entry = counts.get(key) ?? { tournamentCount: 0, completedCount: 0 };
-      entry.tournamentCount += 1;
-      if (t.status === "completed") entry.completedCount += 1;
-      counts.set(key, entry);
+    const filter = isAdmin(actor.role)
+      ? activeFilter
+      : { ...activeFilter, $or: [{ createdBy: actor.id }, { organizers: actor.id }] };
 
-      let identities = identitiesByLeague.get(key);
-      if (!identities) {
-        identities = new Map();
-        identitiesByLeague.set(key, identities);
-      }
-      for (const [identityKey, isGuest] of collectPlayerIdentities(t)) identities.set(identityKey, isGuest);
-    }
-
-    const result = leagues.map((league) => {
-      const leagueKey = league._id.toString();
-      const identities = identitiesByLeague.get(leagueKey);
-      const guestCount = identities ? [...identities.values()].filter(Boolean).length : 0;
-      const playerCount = identities?.size ?? 0;
-      return {
-        ...league,
-        ...(counts.get(leagueKey) ?? { tournamentCount: 0, completedCount: 0 }),
-        playerCount,
-        registeredCount: playerCount - guestCount,
-        guestCount
-      };
-    });
-
-    res.status(200).json(result);
+    const leagues = await League.find(filter).sort({ startDate: -1 }).lean();
+    res.status(200).json(await enrichLeaguesWithStats(leagues));
   } catch (error: any) {
     res.status(500).json({ message: "Error al obtener las ligas", error: error.message });
   }

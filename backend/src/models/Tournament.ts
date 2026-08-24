@@ -3,7 +3,10 @@ import {
   TOURNAMENT_TYPES,
   TOURNAMENT_FORMATS,
   TEAM_FORMATION_MODES,
-  GUEST_DRAW_MODES
+  GUEST_DRAW_MODES,
+  TOURNAMENT_TEAMS_COUNT,
+  MIN_TOURNAMENT_TEAMS,
+  MAX_TOURNAMENT_TEAMS
 } from "../config/constants";
 import { PlanId, PLAN_IDS } from "../config/plans";
 
@@ -86,6 +89,13 @@ export interface ITournament extends Document {
   matches: mongoose.Types.ObjectId[];
   playerStats: IPlayerStat[];
   pointsAwarded: boolean;
+  /**
+   * Cantidad de equipos del cuadro (mínimo `MIN_TOURNAMENT_TEAMS`, máximo
+   * `MAX_TOURNAMENT_TEAMS`). Define junto con `format` cuántos jugadores
+   * caben (`numberOfTeams * FORMAT_TEAM_SIZE[format]`) y el cuadro que arma
+   * `utils/bracket.ts#buildBracket`. Los torneos creados antes de esta
+   * feature no lo tenían: el default los deja en 8, el tamaño de siempre.
+   */
   numberOfTeams: number;
   createdAt: Date;
   startDate: Date;
@@ -141,7 +151,7 @@ const PlayerStatSchema = new Schema<IPlayerStat>({
   playerId: { type: Schema.Types.ObjectId, ref: "User", required: false },
   name: { type: String, required: true },
   isGuest: { type: Boolean, default: false },
-  position: { type: Number, required: true, min: 1, max: 8 },
+  position: { type: Number, required: true, min: 1, max: MAX_TOURNAMENT_TEAMS },
   points: { type: Number, required: true, min: 0 }
 }, { _id: false });
 
@@ -194,6 +204,13 @@ const tournamentSchema = new Schema<ITournament>(
     matches: [{ type: mongoose.Schema.Types.ObjectId, ref: "Match" }],
     playerStats: { type: [PlayerStatSchema], default: [] },
     pointsAwarded: { type: Boolean, default: false },
+    numberOfTeams: {
+      type: Number,
+      required: true,
+      min: MIN_TOURNAMENT_TEAMS,
+      max: MAX_TOURNAMENT_TEAMS,
+      default: TOURNAMENT_TEAMS_COUNT
+    },
     status: {
       type: String,
       enum: ['upcoming', 'in_progress', 'completed'],

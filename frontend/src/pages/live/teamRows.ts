@@ -1,11 +1,11 @@
 import { LiveTournamentData, LivePlayer } from '../../hooks/useLiveTournament';
-import { BRACKET_SLOT_LABELS, SLOT_RANK, SLOT_TO_POSITION, TERMINAL_SLOTS } from '../../utils/tournament';
+import { slotLabel, slotRank, positionsFromSlot } from '../../utils/tournament';
 
 export interface TeamRow {
   teamId: string;
   name: string;
   players: LivePlayer[];
-  position: number | null; // 1..8 si su partido terminal ya terminó
+  position: number | null; // 1..N si su puesto ya quedó decidido
   points: number | null; // desde standings, según la posición
   state: 'playing' | 'alive' | 'out';
   phaseLabel: string | null; // fase del partido más avanzado del equipo
@@ -15,18 +15,19 @@ export interface TeamRow {
  * Deriva, por equipo, en qué fase está y qué posición final tiene (si ya la
  * tiene) a partir de los matches en vivo. No depende de tournament.playerStats
  * (que guarda una fila por jugador, no por equipo) ni de reglas propias de
- * "eliminación": perder en cuartos no elimina, pasa a la semifinal de plata;
- * solo perder un partido terminal (TERMINAL_SLOTS) define el puesto.
+ * "eliminación": perder no elimina, baja de zona; el puesto se decide recién
+ * cuando `positionsFromSlot` dice que ese LADO (ganador o perdedor, pueden
+ * decidirse en momentos distintos en una zona de tamaño impar) ya no sigue.
  */
 export const buildTeamRows = (data: LiveTournamentData): TeamRow[] => {
-  // Partido más avanzado de cada equipo: el de menor SLOT_RANK.
+  // Partido más avanzado de cada equipo: el de menor slotRank.
   const bestMatchByTeam = new Map<string, LiveTournamentData['matches'][number]>();
   for (const m of data.matches) {
     if (!m.bracketSlot) continue;
-    const rank = SLOT_RANK[m.bracketSlot] ?? Infinity;
+    const rank = slotRank(m.bracketSlot);
     for (const t of m.teams) {
       const current = bestMatchByTeam.get(t.teamId);
-      const currentRank = current?.bracketSlot ? SLOT_RANK[current.bracketSlot] ?? Infinity : Infinity;
+      const currentRank = slotRank(current?.bracketSlot);
       if (rank < currentRank) bestMatchByTeam.set(t.teamId, m);
     }
   }
@@ -38,10 +39,10 @@ export const buildTeamRows = (data: LiveTournamentData): TeamRow[] => {
     const slot = match?.bracketSlot;
 
     let position: number | null = null;
-    if (slot && TERMINAL_SLOTS.includes(slot) && match!.status === 'finished' && match!.winner) {
+    if (slot && match!.status === 'finished' && match!.winner) {
+      const outcome = positionsFromSlot(slot);
       const isWinner = match!.winner === team.teamId;
-      const map = SLOT_TO_POSITION[slot];
-      position = map ? (isWinner ? map.winner : map.loser) : null;
+      position = outcome ? (isWinner ? outcome.winner : outcome.loser) : null;
     }
 
     let state: TeamRow['state'] = 'alive';
@@ -55,7 +56,7 @@ export const buildTeamRows = (data: LiveTournamentData): TeamRow[] => {
       position,
       points: position !== null ? pointsByPosition.get(position) ?? null : null,
       state,
-      phaseLabel: slot ? BRACKET_SLOT_LABELS[slot] ?? slot : null
+      phaseLabel: slot ? slotLabel(slot) : null
     };
   });
 
@@ -64,10 +65,8 @@ export const buildTeamRows = (data: LiveTournamentData): TeamRow[] => {
     if (a.position !== null) return -1;
     if (b.position !== null) return 1;
 
-    const aMatch = bestMatchByTeam.get(a.teamId);
-    const bMatch = bestMatchByTeam.get(b.teamId);
-    const aRank = aMatch?.bracketSlot ? SLOT_RANK[aMatch.bracketSlot] ?? Infinity : Infinity;
-    const bRank = bMatch?.bracketSlot ? SLOT_RANK[bMatch.bracketSlot] ?? Infinity : Infinity;
+    const aRank = slotRank(bestMatchByTeam.get(a.teamId)?.bracketSlot);
+    const bRank = slotRank(bestMatchByTeam.get(b.teamId)?.bracketSlot);
     if (aRank !== bRank) return aRank - bRank;
 
     if (a.state === 'playing' && b.state !== 'playing') return -1;

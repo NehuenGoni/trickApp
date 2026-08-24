@@ -29,19 +29,28 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TvIcon from '@mui/icons-material/Tv';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
-import { isEmpty } from 'lodash';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
 import LogoUploader from '../../components/LogoUploader';
 import TeamRosterEditor, { RosterTeam, RosterPlayer } from '../../components/TeamRosterEditor';
+import BracketFormatPreview from '../../components/BracketFormatPreview';
 import PlanLimitAlert from '../../components/PlanLimitAlert';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
 import { TournamentLogoMeta, TeamFormationMode, poolBasedMode } from '../../types/tournament';
 import { LeagueRef } from '../../types/league';
 import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
-import { PHASE_LABELS, PHASE_ORDER, findFocusMatch, isPlayerInMatch, playerKey } from '../../utils/tournament';
+import {
+  PHASE_LABELS,
+  findFocusMatch,
+  isPlayerInMatch,
+  playerKey,
+  firstRoundSlotsFor,
+  restingCountFor,
+  splitDraftOrder,
+  zoneOfSlot
+} from '../../utils/tournament';
 
 interface PlayerLite {
   playerId?: string;
@@ -105,6 +114,7 @@ interface Tournament {
   format: 'duos' | 'trios';
   teamFormationMode: TeamFormationMode;
   guestDrawMode: 'grouped' | 'mixed';
+  numberOfTeams: number;
   createdBy: string;
   teams: Team[];
   individualSignups: Signup[];
@@ -188,12 +198,11 @@ const TournamentDetails = () => {
 
   const [startOpen, setStartOpen] = useState(false);
   const [startMode, setStartMode] = useState<'random' | 'manual' | null>(null);
-  const [pairings, setPairings] = useState<Record<string, [string, string]>>({
-    QF1: ['', ''],
-    QF2: ['', ''],
-    QF3: ['', ''],
-    QF4: ['', '']
-  });
+  // Se inicializan recién al abrir el diálogo (`openStartDialog`), porque la
+  // cantidad de cruces/descansos depende de `tournament.numberOfTeams`, que
+  // todavía no se conoce en el primer render.
+  const [pairings, setPairings] = useState<Record<string, [string, string]>>({});
+  const [restingIds, setRestingIds] = useState<string[]>([]);
   const [drawing, setDrawing] = useState(false);
 
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -274,7 +283,8 @@ const TournamentDetails = () => {
 
   const isCreator = !!tournament && tournament.createdBy === currentUserId;
   const teamSize = tournament ? TEAM_SIZE[tournament.format] : 2;
-  const targetIndividuals = tournament ? 8 * TEAM_SIZE[tournament.format] : 16;
+  const numberOfTeams = tournament?.numberOfTeams ?? 8; // torneos legacy: el tamaño de siempre.
+  const targetIndividuals = tournament ? numberOfTeams * TEAM_SIZE[tournament.format] : 16;
 
   // random y creator-formed: la inscripción es individual y los equipos
   // derivan del pool (`individualSignups`). Espejo de POOL_BASED_FORMATION_MODES
@@ -307,7 +317,7 @@ const TournamentDetails = () => {
   );
 
   const fixedTeams = tournament ? tournament.teams.filter((t) => !t.isDrawn) : [];
-  const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === 8;
+  const hasDraft = !!tournament?.draftPairOrder && tournament.draftPairOrder.length === numberOfTeams;
 
   // Equipos que se pueden reorganizar con el editor: en los modos con pool,
   // solo los que derivan de él (los fijos son inmutables ahí); en user-formed,
@@ -327,22 +337,30 @@ const TournamentDetails = () => {
   })();
 
   // Solo aplica a creator-formed: además de completar el pool, hacen falta
-  // los 8 equipos armados y completos para poder iniciar.
+  // los `numberOfTeams` equipos armados y completos para poder iniciar.
   const teamsReady =
     !tournament || tournament.teamFormationMode !== 'creator-formed'
       ? true
-      : tournament.teams.length === 8 && tournament.teams.every((t) => t.players.length === teamSize);
+      : tournament.teams.length === numberOfTeams &&
+        tournament.teams.every((t) => t.players.length === teamSize);
 
-  const drawPairings: Array<[Team, Team]> = (() => {
-    if (!tournament?.draftPairOrder) return [];
-    const order = tournament.draftPairOrder;
-    const pairs: Array<[Team, Team]> = [];
-    for (let i = 0; i < order.length; i += 2) {
-      const a = tournament.teams.find((t) => t.teamId === order[i]);
-      const b = tournament.teams.find((t) => t.teamId === order[i + 1]);
-      if (a && b) pairs.push([a, b]);
-    }
-    return pairs;
+  // Cruces de la 1ra ronda + quiénes descansan (solo si numberOfTeams no es
+  // potencia de 2 — ver splitDraftOrder). Nadie descansa dos veces: los que
+  // quedan afuera de los cruces de arriba entran directo a la zona de oro.
+  const { pairs: drawPairings, resting: drawResting }: { pairs: Array<[Team, Team]>; resting: Team[] } = (() => {
+    if (!tournament?.draftPairOrder) return { pairs: [], resting: [] };
+    const findTeam = (tid: string) => tournament.teams.find((t) => t.teamId === tid);
+    const { pairs, resting } = splitDraftOrder(tournament.draftPairOrder, numberOfTeams);
+    const resolvedPairs = pairs.flatMap(([aId, bId]): Array<[Team, Team]> => {
+      const a = findTeam(aId);
+      const b = findTeam(bId);
+      return a && b ? [[a, b]] : [];
+    });
+    const resolvedResting = resting.flatMap((tid) => {
+      const t = findTeam(tid);
+      return t ? [t] : [];
+    });
+    return { pairs: resolvedPairs, resting: resolvedResting };
   })();
 
   const slotsFilled = (() => {
@@ -353,12 +371,12 @@ const TournamentDetails = () => {
     return tournament.teams.length;
   })();
 
-  const totalSlots = tournament ? (poolBased ? targetIndividuals : 8) : 0;
+  const totalSlots = tournament ? (poolBased ? targetIndividuals : numberOfTeams) : 0;
 
   const cupCompletos = tournament
     ? poolBased
       ? slotsFilled === targetIndividuals && teamsReady
-      : tournament.teams.length === 8
+      : tournament.teams.length === numberOfTeams
     : false;
 
   // Cupos libres para el modal "Agregar jugador": slotsFilled ya cuenta a los
@@ -660,20 +678,40 @@ const TournamentDetails = () => {
     }
   };
 
+  // Arma el estado inicial del diálogo de inicio manual: tantos cruces vacíos
+  // como necesite `numberOfTeams`, más un slot de "descansa" por cada equipo
+  // que el cuadro no alcanza a emparejar en la 1ra ronda (0 si es potencia de 2).
+  const openStartDialog = () => {
+    if (tournament) {
+      const slots = firstRoundSlotsFor(tournament.numberOfTeams);
+      setPairings(Object.fromEntries(slots.map((s) => [s, ['', ''] as [string, string]])));
+      setRestingIds(Array(restingCountFor(tournament.numberOfTeams)).fill(''));
+    }
+    setStartOpen(true);
+  };
+
   const handleStart = async () => {
     if (!id || !tournament || !startMode) return;
     try {
-      const body: { mode: string; pairings?: Array<{ slot: string; teamIds: string[] }> } = {
-        mode: startMode
-      };
+      const body: {
+        mode: string;
+        pairings?: Array<{ slot: string; teamIds: string[] }>;
+        resting?: string[];
+      } = { mode: startMode };
       if (startMode === 'manual') {
-        const arr = (['QF1', 'QF2', 'QF3', 'QF4'] as const).map((s) => ({
-          slot: s,
-          teamIds: pairings[s]
-        }));
+        const slots = firstRoundSlotsFor(tournament.numberOfTeams);
+        const arr = slots.map((s) => ({ slot: s, teamIds: pairings[s] ?? ['', ''] }));
         if (arr.some((e) => !e.teamIds[0] || !e.teamIds[1])) {
-          setError('Completá todos los slots de los cuartos');
+          setError('Completá todos los cruces de la primera ronda');
           return;
+        }
+        const restCount = restingCountFor(tournament.numberOfTeams);
+        if (restCount > 0) {
+          if (restingIds.length !== restCount || restingIds.some((r) => !r)) {
+            setError('Indicá qué equipos descansan la primera ronda');
+            return;
+          }
+          body.resting = restingIds;
         }
         body.pairings = arr;
       }
@@ -887,6 +925,16 @@ const TournamentDetails = () => {
                 Transmitir
               </Button>
             )}
+            {tournament.status === 'upcoming' && isCreator && (
+              <Button
+                variant="contained"
+                color="success"
+                disabled={!cupCompletos}
+                onClick={openStartDialog}
+              >
+                Iniciar torneo
+              </Button>
+            )}
           </Box>
 
           {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
@@ -966,10 +1014,26 @@ const TournamentDetails = () => {
           </Box>
 
           {tournament.status === 'upcoming' && (
-            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Inscripciones
-              </Typography>
+            <Accordion sx={{ mb: 3 }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="h6">Cómo va a ser el torneo</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <BracketFormatPreview
+                  numberOfTeams={numberOfTeams}
+                  firstRoundPairings={hasDraft ? drawPairings : undefined}
+                  restingTeams={hasDraft ? drawResting : undefined}
+                />
+              </AccordionDetails>
+            </Accordion>
+          )}
+
+          {tournament.status === 'upcoming' && (
+            <Accordion defaultExpanded sx={{ mb: 3 }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="h6">Inscripciones</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
 
               {poolBased ? (
                 <Box>
@@ -1004,7 +1068,7 @@ const TournamentDetails = () => {
                   {tournament.teamFormationMode === 'creator-formed' && editableTeams.length > 0 && (
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Equipos armados ({editableTeams.length}/8):
+                        Equipos armados ({editableTeams.length}/{numberOfTeams}):
                       </Typography>
                       {editableTeams.map((t) => (
                         <Paper key={t.teamId} variant="outlined" sx={{ p: 1, my: 1 }}>
@@ -1025,7 +1089,7 @@ const TournamentDetails = () => {
               ) : (
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Equipos ({tournament.teams.length}/8):
+                    Equipos ({tournament.teams.length}/{numberOfTeams}):
                   </Typography>
                   {tournament.teams.length === 0 ? (
                     <Typography variant="body2">Aún no hay equipos inscriptos.</Typography>
@@ -1089,25 +1153,17 @@ const TournamentDetails = () => {
                     Reorganizar jugadores
                   </Button>
                 )}
-                {isCreator && (
-                  <Button
-                    variant="contained"
-                    color="success"
-                    disabled={!cupCompletos}
-                    onClick={() => setStartOpen(true)}
-                  >
-                    Iniciar torneo
-                  </Button>
-                )}
               </Box>
-            </Paper>
+              </AccordionDetails>
+            </Accordion>
           )}
 
           {tournament.status === 'upcoming' && isCreator && cupCompletos && (
-            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Sorteo
-              </Typography>
+            <Accordion sx={{ mb: 3 }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="h6">Sorteo</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
               {tournament.teamFormationMode === 'random' && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                   Invitados: {tournament.guestDrawMode === 'mixed'
@@ -1119,15 +1175,15 @@ const TournamentDetails = () => {
                 <Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {tournament.teamFormationMode === 'random'
-                      ? 'Sorteá los equipos y los cruces de cuartos. Vas a poder ver el resultado y volver a sortear las veces que quieras antes de iniciar el torneo.'
-                      : 'Sorteá los cruces de cuartos entre los 8 equipos armados.'}
+                      ? 'Sorteá los equipos y los cruces de la primera ronda. Vas a poder ver el resultado y volver a sortear las veces que quieras antes de iniciar el torneo.'
+                      : `Sorteá los cruces de la primera ronda entre los ${numberOfTeams} equipos armados.`}
                   </Typography>
                   <Button variant="contained" disabled={drawing} onClick={handleDrawClick}>
                     {drawing
                       ? 'Sorteando...'
                       : tournament.teamFormationMode === 'random'
                       ? 'Sortear equipos y cruces'
-                      : 'Sortear cruces de cuartos'}
+                      : 'Sortear cruces de la primera ronda'}
                   </Button>
                 </Box>
               ) : (
@@ -1155,13 +1211,18 @@ const TournamentDetails = () => {
                   ))}
 
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
-                    Cruces de cuartos:
+                    Cruces de la primera ronda:
                   </Typography>
                   {drawPairings.map(([a, b], i) => (
                     <Typography key={a.teamId} variant="body2" sx={{ mb: 0.5 }}>
-                      QF{i + 1}: {a.name} vs {b.name}
+                      Cruce {i + 1}: {a.name} vs {b.name}
                     </Typography>
                   ))}
+                  {drawResting.length > 0 && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      Descansan la primera ronda: {drawResting.map((t) => t.name).join(', ')}
+                    </Typography>
+                  )}
 
                   <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
                     <Button variant="outlined" disabled={drawing} onClick={handleDrawClick}>
@@ -1178,7 +1239,8 @@ const TournamentDetails = () => {
                   </Typography>
                 </Box>
               )}
-            </Paper>
+              </AccordionDetails>
+            </Accordion>
           )}
 
           {tournament.status === 'completed' && tournament.playerStats.length > 0 && (
@@ -1208,36 +1270,74 @@ const TournamentDetails = () => {
             </Paper>
           )}
 
-          {matches.length > 0 && (
-            <>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="h5" gutterBottom>
-                Partidos del torneo
-              </Typography>
+          {matches.length > 0 && (() => {
+            // Agrupa por `phase` tal cual lo manda el backend: para el cuadro
+            // de 8 de siempre son las claves legacy ('quarter-finals', etc,
+            // traducidas acá con PHASE_LABELS); para cualquier otro tamaño ya
+            // vienen en español (`phaseLabelFor` en backend/src/utils/bracket.ts),
+            // así que se muestran tal cual. Antes esto filtraba contra una
+            // lista fija de 7 fases legacy y por eso ningún torneo con una
+            // cantidad de equipos distinta de 8 mostraba sus partidos acá.
+            const groups = new Map<string, Match[]>();
+            for (const m of matches) {
+              const key = m.phase || 'Otros partidos';
+              const bucket = groups.get(key);
+              if (bucket) bucket.push(m);
+              else groups.set(key, [m]);
+            }
+            // Orden de arriba hacia abajo: zona más grande (ronda más
+            // temprana) primero y, dentro del mismo tamaño, oro antes que
+            // plata — mismo criterio que `buildBracketRows` en utils/tournament.ts.
+            // Para el cuadro de 8 de siempre se respeta el orden legacy tal
+            // cual estaba (difiere en un detalle del criterio genérico: ahí
+            // "Match por 3°/4°" quedaba después de "Final de Plata").
+            const LEGACY_PHASE_ORDER = [
+              'quarter-finals', 'semifinals-gold', 'semifinals',
+              'final-gold', 'final', 'third-place', 'seventh-place'
+            ];
+            const orderedPhases = Array.from(groups.keys()).sort((a, b) => {
+              const la = LEGACY_PHASE_ORDER.indexOf(a);
+              const lb = LEGACY_PHASE_ORDER.indexOf(b);
+              if (la !== -1 && lb !== -1) return la - lb;
+              const za = zoneOfSlot(groups.get(a)![0].bracketSlot || '');
+              const zb = zoneOfSlot(groups.get(b)![0].bracketSlot || '');
+              const sizeA = za ? za.posHigh - za.posLow + 1 : 0;
+              const sizeB = zb ? zb.posHigh - zb.posLow + 1 : 0;
+              if (sizeA !== sizeB) return sizeB - sizeA;
+              return (za?.posLow ?? 0) - (zb?.posLow ?? 0);
+            });
 
-              {PHASE_ORDER.map((phase) => {
-                const phaseMatches = matches.filter((m) => m.phase === phase);
-                if (isEmpty(phaseMatches)) return null;
-                return (
-                  <Box sx={{ mb: 2 }} key={phase}>
-                    <Accordion
-                      expanded={expandedPhase === phase}
-                      onChange={(_, isExpanded) => setExpandedPhase(isExpanded ? phase : false)}
-                    >
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Typography fontWeight="bold">{PHASE_LABELS[phase]}</Typography>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        <Grid container spacing={3}>
-                          {phaseMatches.map(renderMatchCard)}
-                        </Grid>
-                      </AccordionDetails>
-                    </Accordion>
-                  </Box>
-                );
-              })}
-            </>
-          )}
+            return (
+              <>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="h5" gutterBottom>
+                  Partidos del torneo
+                </Typography>
+
+                {orderedPhases.map((phase) => {
+                  const phaseMatches = groups.get(phase)!;
+                  const label = PHASE_LABELS[phase] ?? phase;
+                  return (
+                    <Box sx={{ mb: 2 }} key={phase}>
+                      <Accordion
+                        expanded={expandedPhase === phase}
+                        onChange={(_, isExpanded) => setExpandedPhase(isExpanded ? phase : false)}
+                      >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography fontWeight="bold">{label}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <Grid container spacing={3}>
+                            {phaseMatches.map(renderMatchCard)}
+                          </Grid>
+                        </AccordionDetails>
+                      </Accordion>
+                    </Box>
+                  );
+                })}
+              </>
+            );
+          })()}
         </SurfaceCard>
 
         <Dialog
@@ -1558,15 +1658,20 @@ const TournamentDetails = () => {
                   </Typography>
                 ))}
                 <Typography variant="body2" sx={{ mt: 2, mb: 1, fontWeight: 'bold' }}>
-                  Cruces de cuartos:
+                  Cruces de la primera ronda:
                 </Typography>
                 {drawPairings.map(([a, b], i) => (
                   <Typography key={a.teamId} variant="body2">
-                    QF{i + 1}: {a.name} vs {b.name}
+                    Cruce {i + 1}: {a.name} vs {b.name}
                   </Typography>
                 ))}
+                {drawResting.length > 0 && (
+                  <Typography variant="body2">
+                    Descansan: {drawResting.map((t) => t.name).join(', ')}
+                  </Typography>
+                )}
                 <Button sx={{ mt: 2 }} size="small" onClick={() => setStartMode('manual')}>
-                  Elegir cuartos manualmente en su lugar
+                  Elegir cruces manualmente en su lugar
                 </Button>
               </Box>
             )}
@@ -1588,58 +1693,89 @@ const TournamentDetails = () => {
                 </Button>
               </Box>
             )}
-            {startMode === 'manual' && tournament.teams.length === 8 && (
-              <Box>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  Elegí los 2 equipos para cada cuarto. Cada equipo solo puede aparecer
-                  una vez.
-                </Typography>
-                {(['QF1', 'QF2', 'QF3', 'QF4'] as const).map((slot) => (
-                  <Box key={slot} sx={{ mb: 2 }}>
-                    <Typography fontWeight="bold">{slot}</Typography>
-                    {[0, 1].map((idx) => {
-                      const usedIds = Object.entries(pairings).flatMap(([s, ids]) =>
-                        ids.filter(
-                          (_, i) => !(s === slot && i === idx) && Boolean(_)
-                        )
-                      );
-                      const available = tournament.teams.filter(
-                        (t) => !usedIds.includes(t.teamId)
-                      );
-                      return (
-                        <FormControl fullWidth size="small" sx={{ my: 0.5 }} key={idx}>
-                          <InputLabel>{`Equipo ${idx + 1}`}</InputLabel>
-                          <Select
-                            label={`Equipo ${idx + 1}`}
-                            value={pairings[slot][idx]}
-                            onChange={(e) => {
-                              const next = { ...pairings };
-                              next[slot] = [...pairings[slot]] as [string, string];
-                              next[slot][idx] = e.target.value;
-                              setPairings(next);
-                            }}
-                          >
-                            {available.map((t) => (
-                              <MenuItem key={t.teamId} value={t.teamId}>
-                                {t.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      );
-                    })}
-                  </Box>
-                ))}
-              </Box>
+            {startMode === 'manual' && tournament.teams.length === numberOfTeams && (() => {
+              const slots = firstRoundSlotsFor(numberOfTeams);
+              // Todo equipo ya elegido en cualquier cruce o como "descansa",
+              // para no ofrecerlo dos veces en otro selector.
+              const allUsedIds = [...Object.values(pairings).flat(), ...restingIds].filter(Boolean);
+              const availableExcluding = (currentId: string) =>
+                tournament.teams.filter((t) => t.teamId === currentId || !allUsedIds.includes(t.teamId));
+              return (
+                <Box>
+                  <Typography variant="body2" sx={{ mb: 2 }}>
+                    Elegí los 2 equipos para cada cruce de la primera ronda. Cada equipo
+                    solo puede aparecer una vez.
+                  </Typography>
+                  {slots.map((slot, slotIdx) => (
+                    <Box key={slot} sx={{ mb: 2 }}>
+                      <Typography fontWeight="bold">Cruce {slotIdx + 1}</Typography>
+                      {[0, 1].map((idx) => {
+                        const available = availableExcluding(pairings[slot]?.[idx] ?? '');
+                        return (
+                          <FormControl fullWidth size="small" sx={{ my: 0.5 }} key={idx}>
+                            <InputLabel>{`Equipo ${idx + 1}`}</InputLabel>
+                            <Select
+                              label={`Equipo ${idx + 1}`}
+                              value={pairings[slot]?.[idx] ?? ''}
+                              onChange={(e) => {
+                                const next = { ...pairings };
+                                next[slot] = [...(pairings[slot] ?? ['', ''])] as [string, string];
+                                next[slot][idx] = e.target.value;
+                                setPairings(next);
+                              }}
+                            >
+                              {available.map((t) => (
+                                <MenuItem key={t.teamId} value={t.teamId}>
+                                  {t.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        );
+                      })}
+                    </Box>
+                  ))}
+                  {restingIds.length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography fontWeight="bold">Descansan la primera ronda</Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                        No entran en los cruces de arriba: pasan directo a la ronda siguiente.
+                      </Typography>
+                      {restingIds.map((value, restIdx) => {
+                        const available = availableExcluding(value);
+                        return (
+                          <FormControl fullWidth size="small" sx={{ my: 0.5 }} key={restIdx}>
+                            <InputLabel>{`Descansa ${restIdx + 1}`}</InputLabel>
+                            <Select
+                              label={`Descansa ${restIdx + 1}`}
+                              value={value}
+                              onChange={(e) => {
+                                const next = [...restingIds];
+                                next[restIdx] = e.target.value;
+                                setRestingIds(next);
+                              }}
+                            >
+                              {available.map((t) => (
+                                <MenuItem key={t.teamId} value={t.teamId}>
+                                  {t.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        );
+                      })}
+                    </Box>
+                  )}
+                </Box>
+              );
+            })()}
+            {startMode === 'manual' && tournament.teams.length !== numberOfTeams && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                En modo aleatorio de equipos, los equipos se generan recién al iniciar
+                el torneo. Por eso, si querés asignar los cruces manualmente, tu torneo
+                debería ser de equipos armados por jugadores.
+              </Alert>
             )}
-            {startMode === 'manual' &&
-              tournament.teams.length !== 8 && (
-                <Alert severity="info" sx={{ mt: 1 }}>
-                  En modo aleatorio de equipos, los equipos se generan recién al iniciar
-                  el torneo. Por eso, si querés asignar cuartos manualmente, tu torneo
-                  debería ser de equipos armados por jugadores.
-                </Alert>
-              )}
           </DialogContent>
           <DialogActions>
             <Button
@@ -1693,6 +1829,7 @@ const TournamentDetails = () => {
           tournamentId={tournament._id}
           mode={tournament.teamFormationMode}
           teamSize={teamSize}
+          numberOfTeams={numberOfTeams}
           teams={rosterTeams}
           unassigned={rosterUnassigned}
           hasDraft={hasDraft}

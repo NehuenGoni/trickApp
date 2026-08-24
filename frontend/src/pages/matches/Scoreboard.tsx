@@ -20,7 +20,7 @@ import NavBar from '../../components/NavBar';
 import API_ROUTES, { apiRequest } from '../../config/api';
 import { useWakeLock } from '../../hooks/useWakeLock';
 import { MAX_SCORE, getScoreStage, getDisplayScore } from '../../utils/truco';
-import { findFocusMatch, BRACKET_SLOT_LABELS } from '../../utils/tournament';
+import { findFocusMatch, slotLabel } from '../../utils/tournament';
 import TournamentLogo from '../../components/TournamentLogo';
 import { TournamentLogoSource } from '../../types/tournament';
 
@@ -599,9 +599,7 @@ const Scoreboard = () => {
               onClick={() => navigate(`/matches/scoreboard/${nextMatch._id}`)}
             >
               Próximo partido
-              {nextMatch.bracketSlot && BRACKET_SLOT_LABELS[nextMatch.bracketSlot]
-                ? ` · ${BRACKET_SLOT_LABELS[nextMatch.bracketSlot]}`
-                : ''}
+              {nextMatch.bracketSlot ? ` · ${slotLabel(nextMatch.bracketSlot)}` : ''}
             </Button>
           )}
         </Box>

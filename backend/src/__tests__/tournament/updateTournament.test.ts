@@ -180,4 +180,94 @@ describe("PUT /tournaments/:id", () => {
     const persisted = await TournamentModel.findById(tournamentId);
     expect(persisted!.league?.toString()).toBe(leagueId);
   });
+
+  describe("numberOfTeams", () => {
+    it("se puede agrandar el cuadro sin equipos cargados", async () => {
+      const { token } = await createUserWithToken();
+      const createRes = await createTournament(token); // default: 8
+      const tournamentId = createRes.body._id as string;
+
+      const res = await request(app)
+        .put(`/tournaments/${tournamentId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ numberOfTeams: 16 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.numberOfTeams).toBe(16);
+      const persisted = await TournamentModel.findById(tournamentId);
+      expect(persisted!.numberOfTeams).toBe(16);
+    });
+
+    it("se puede agrandar el cuadro AUNQUE ya haya equipos cargados: agrandar nunca deja a nadie afuera", async () => {
+      const { token } = await createUserWithToken();
+      const createRes = await createTournament(token);
+      const tournamentId = createRes.body._id as string;
+
+      await request(app)
+        .post(`/tournaments/${tournamentId}/teams/guests`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Equipo 1", members: [{ name: "A", isGuest: true }, { name: "B", isGuest: true }] });
+
+      const res = await request(app)
+        .put(`/tournaments/${tournamentId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ numberOfTeams: 16 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.numberOfTeams).toBe(16);
+    });
+
+    it("rechaza achicar el cuadro por debajo de los equipos ya cargados", async () => {
+      const { token } = await createUserWithToken();
+      const createRes = await createTournament(token, { numberOfTeams: 16 });
+      const tournamentId = createRes.body._id as string;
+
+      // Carga 9 equipos: ya no entran en un cuadro de 8.
+      for (let i = 0; i < 9; i++) {
+        await request(app)
+          .post(`/tournaments/${tournamentId}/teams/guests`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            name: `Equipo ${i + 1}`,
+            members: [{ name: "A", isGuest: true }, { name: "B", isGuest: true }]
+          });
+      }
+
+      const res = await request(app)
+        .put(`/tournaments/${tournamentId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ numberOfTeams: 8 });
+
+      expect(res.status).toBe(400);
+      const persisted = await TournamentModel.findById(tournamentId);
+      expect(persisted!.numberOfTeams).toBe(16);
+    });
+
+    it("rechaza un valor fuera de rango", async () => {
+      const { token } = await createUserWithToken();
+      const createRes = await createTournament(token);
+      const tournamentId = createRes.body._id as string;
+
+      const res = await request(app)
+        .put(`/tournaments/${tournamentId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ numberOfTeams: 33 });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("no se puede cambiar una vez que el torneo ya arrancó, ni siquiera vía admin", async () => {
+      const fixture = await buildStartedTournament("grand-slam"); // 8 equipos, in_progress
+      const { token: adminToken } = await createUserWithToken({ role: ROLES.SUPERADMIN });
+
+      const res = await request(app)
+        .put(`/admin/tournaments/${fixture.tournamentId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ numberOfTeams: 16 });
+
+      expect(res.status).toBe(400);
+      const persisted = await TournamentModel.findById(fixture.tournamentId);
+      expect(persisted!.numberOfTeams).toBe(8);
+    });
+  });
 });

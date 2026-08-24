@@ -1,14 +1,16 @@
 import mongoose, { Schema, Document } from "mongoose";
-import {
-  MATCH_TYPES,
-  MATCH_STATUS,
-  MATCH_PHASES,
-  BRACKET_SLOTS
-} from "../config/constants";
+import { MATCH_TYPES, MATCH_STATUS } from "../config/constants";
 
-export type MatchPhase = typeof MATCH_PHASES[keyof typeof MATCH_PHASES];
+/**
+ * `phase` y `bracketSlot` ya no son un enum fijo: los genera `utils/bracket.ts`
+ * según la cantidad de equipos del torneo (`${posLow}-${posHigh}#${indice}`,
+ * con el alias legacy QF1/SFG1/FG/etc. para los torneos de 8 equipos). La
+ * validación real es "¿existe como nodo del cuadro de este torneo?", no un
+ * enum — por eso el schema los guarda como `String` libre.
+ */
+export type MatchPhase = string;
 export type MatchStatus = typeof MATCH_STATUS[keyof typeof MATCH_STATUS];
-export type BracketSlot = typeof BRACKET_SLOTS[keyof typeof BRACKET_SLOTS];
+export type BracketSlot = string;
 
 export interface IMatchPlayer {
   playerId?: mongoose.Types.ObjectId;
@@ -68,16 +70,10 @@ const MatchSchema = new Schema<IMatch>(
       enum: Object.values(MATCH_TYPES),
       default: MATCH_TYPES.FRIENDLY
     },
-    phase: {
-      type: String,
-      enum: Object.values(MATCH_PHASES),
-      required: false
-    },
-    bracketSlot: {
-      type: String,
-      enum: Object.values(BRACKET_SLOTS),
-      required: false
-    },
+    // Sin `enum`: el universo de slots/phases válidos depende de la cantidad
+    // de equipos del torneo (ver `utils/bracket.ts`), no es una lista fija.
+    phase: { type: String, required: false },
+    bracketSlot: { type: String, required: false },
     feedsWinnerTo: { type: mongoose.Schema.Types.ObjectId, ref: "Match", required: false },
     feedsLoserTo: { type: mongoose.Schema.Types.ObjectId, ref: "Match", required: false },
     createdAt: { type: Date, default: Date.now },

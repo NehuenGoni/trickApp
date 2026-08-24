@@ -2,6 +2,7 @@ import express from "express";
 import {
   createLeague,
   getLeagues,
+  getManageableLeagues,
   getLeagueById,
   updateLeague,
   deleteLeague,
@@ -23,6 +24,8 @@ const router = express.Router();
 
 router.post("/", authMiddleware, createLeague);
 router.get("/", getLeagues);
+// Antes de "/:id" para que Express no interprete "mine" como un id de liga.
+router.get("/mine", authMiddleware, getManageableLeagues);
 router.get("/:id", getLeagueById);
 router.put("/:id", authMiddleware, updateLeague);
 router.delete("/:id", authMiddleware, deleteLeague);

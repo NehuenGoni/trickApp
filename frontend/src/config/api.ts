@@ -95,6 +95,8 @@ const API_ROUTES = {
     CREATE: `${API_BASE_URL}/leagues`,
     // Filtro de inactivas vía `apiRequest(LIST, { params: { includeInactive: 1 } })`.
     LIST: `${API_BASE_URL}/leagues`,
+    // Requiere auth: solo las ligas que el usuario puede gestionar (dueño/organizer, o todas si es admin).
+    MINE: `${API_BASE_URL}/leagues/mine`,
     DETAIL: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     UPDATE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
     DELETE: (id: string) => `${API_BASE_URL}/leagues/${id}`,
