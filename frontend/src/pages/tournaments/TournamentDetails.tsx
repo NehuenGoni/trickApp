@@ -170,6 +170,7 @@ const TournamentDetails = () => {
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registerTeamName, setRegisterTeamName] = useState('');
   const [registerMembers, setRegisterMembers] = useState<UserOption[]>([]);
+  const [registerGuests, setRegisterGuests] = useState<string[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
 
@@ -429,22 +430,28 @@ const TournamentDetails = () => {
           setError('Ingresá el nombre del equipo');
           return;
         }
-        const ids = [currentUserId, ...registerMembers.map((m) => m._id)];
-        if (ids.length !== teamSize) {
-          setError(`Faltan integrantes: ${ids.length}/${teamSize}`);
+        const guestList = registerGuests.filter((g) => g.trim());
+        const members = [
+          { playerId: currentUserId, isGuest: false },
+          ...registerMembers.map((m) => ({ playerId: m._id, name: m.username, isGuest: false })),
+          ...guestList.map((g) => ({ name: g, isGuest: true }))
+        ];
+        if (members.length !== teamSize) {
+          setError(`Faltan integrantes: ${members.length}/${teamSize}`);
           return;
         }
         await apiRequest(API_ROUTES.TOURNAMENTS.REGISTER(id), {
           method: 'POST',
           body: JSON.stringify({
             teamName: registerTeamName,
-            memberUserIds: ids
+            members
           })
         });
       }
       setRegisterOpen(false);
       setRegisterTeamName('');
       setRegisterMembers([]);
+      setRegisterGuests([]);
       setInfo('Inscripción registrada');
       fetchData();
     } catch (err) {
@@ -1342,7 +1349,7 @@ const TournamentDetails = () => {
 
         <Dialog
           open={registerOpen}
-          onClose={() => setRegisterOpen(false)}
+          onClose={() => { setRegisterOpen(false); setRegisterGuests([]); }}
           fullWidth
           maxWidth="sm"
         >
@@ -1364,8 +1371,8 @@ const TournamentDetails = () => {
                   margin="normal"
                 />
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Vos ya estás incluido. Elegí los otros {teamSize - 1}{' '}
-                  {teamSize === 2 ? 'compañero' : 'compañeros'}.
+                  Vos ya estás incluido. Completá los otros {teamSize - 1}{' '}
+                  {teamSize === 2 ? 'lugar' : 'lugares'} con compañeros registrados o invitados sin cuenta.
                 </Typography>
                 <Autocomplete
                   multiple
@@ -1381,16 +1388,31 @@ const TournamentDetails = () => {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label={`Compañeros (${registerMembers.length}/${teamSize - 1})`}
+                      label={`Compañeros registrados (${registerMembers.length}/${teamSize - 1})`}
                       margin="normal"
+                      helperText="Podés completar el resto del equipo con invitados sin cuenta"
                     />
                   )}
                 />
+                {Array.from({ length: Math.max(0, teamSize - 1 - registerMembers.length) }).map((_, i) => (
+                  <TextField
+                    key={i}
+                    fullWidth
+                    label={`Invitado ${i + 1} (nombre)`}
+                    value={registerGuests[i] || ''}
+                    onChange={(e) => {
+                      const arr = [...registerGuests];
+                      arr[i] = e.target.value;
+                      setRegisterGuests(arr);
+                    }}
+                    margin="dense"
+                  />
+                ))}
               </Box>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setRegisterOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setRegisterOpen(false); setRegisterGuests([]); }}>Cancelar</Button>
             <Button variant="contained" onClick={handleRegister}>
               Inscribirme
             </Button>
