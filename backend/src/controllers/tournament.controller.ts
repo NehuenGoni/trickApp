@@ -595,23 +595,34 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
     }
 
     if (tournament.teamFormationMode === TEAM_FORMATION_MODES.USER_FORMED) {
-      const { teamName, memberUserIds } = req.body as {
+      const { teamName, members } = req.body as {
         teamName?: string;
-        memberUserIds?: string[];
+        members?: Array<{ playerId?: string; name?: string; isGuest?: boolean }>;
       };
 
       if (!teamName || typeof teamName !== "string") {
         return void res.status(400).json({ message: "Falta el nombre del equipo" });
       }
-      if (!Array.isArray(memberUserIds) || memberUserIds.length === 0) {
+      if (!Array.isArray(members) || members.length === 0) {
         return void res.status(400).json({ message: "Falta la lista de miembros" });
       }
       const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
-      if (memberUserIds.length !== expectedSize) {
+      if (members.length !== expectedSize) {
         return void res.status(400).json({
           message: `El equipo debe tener ${expectedSize} jugadores (formato ${tournament.format})`
         });
       }
+
+      const registeredMembers = members.filter((m) => !m.isGuest);
+      const guestMembers = members.filter((m) => m.isGuest);
+      if (registeredMembers.some((m) => !m.playerId)) {
+        return void res.status(400).json({ message: "Falta el usuario de algún miembro" });
+      }
+      if (guestMembers.some((m) => !m.name || !m.name.trim())) {
+        return void res.status(400).json({ message: "Falta el nombre de algún invitado" });
+      }
+
+      const memberUserIds = registeredMembers.map((m) => m.playerId as string);
       if (!memberUserIds.includes(userId)) {
         return void res.status(400).json({
           message: "Quien se inscribe debe ser parte del equipo"
@@ -641,7 +652,10 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         return void res.status(400).json({ message: "Algún miembro no existe" });
       }
 
-      const newPlayers: IdentifiablePlayer[] = users.map((u) => ({ playerId: u._id, isGuest: false }));
+      const newPlayers: IdentifiablePlayer[] = [
+        ...users.map((u) => ({ playerId: u._id, isGuest: false })),
+        ...guestMembers.map((g) => ({ name: g.name, isGuest: true }))
+      ];
       const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
       if (capDenial) return void res.status(402).json(capDenial);
 
@@ -649,11 +663,17 @@ export const registerToTournament = async (req: AuthRequest, res: Response): Pro
         teamId: new mongoose.Types.ObjectId(),
         name: teamName,
         registeredBy: new mongoose.Types.ObjectId(userId),
-        players: users.map((u) => ({
-          playerId: u._id as mongoose.Types.ObjectId,
-          name: u.username,
-          isGuest: false
-        }))
+        players: [
+          ...users.map((u) => ({
+            playerId: u._id as mongoose.Types.ObjectId,
+            name: u.username,
+            isGuest: false
+          })),
+          ...guestMembers.map((g) => ({
+            name: g.name!.trim(),
+            isGuest: true
+          }))
+        ]
       };
 
       const updateResult = await TournamentModel.updateOne(
