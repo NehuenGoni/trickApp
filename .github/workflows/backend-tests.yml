@@ -10,6 +10,9 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-tests.yml"
+  # Permite que backend-deploy.yml reuse este job como gate antes de deployar,
+  # sin duplicar los pasos de test.
+  workflow_call:
 
 jobs:
   test:

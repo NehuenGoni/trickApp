@@ -1,0 +1,39 @@
+name: Backend deploy
+
+# Se dispara con el push a main que genera el merge de un PR (un push directo
+# a main también lo dispara, pero en este repo main solo avanza por PR). No
+# reacciona a pull_request: no queremos deployar a producción código que
+# todavía no se mergeó.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-deploy.yml"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  # Reusa los mismos steps que corren en cada PR. Si por lo que sea llegara a
+  # mergearse un commit que no los pasa (force-push, admin override, etc.), no
+  # queremos deployarlo igual.
+  test:
+    uses: ./.github/workflows/backend-tests.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # --remote-only: builda la imagen en los builders remotos de Fly en vez
+      # de en el runner de Actions, así no hace falta Docker local y el build
+      # es más rápido (cachea capas entre deploys del lado de Fly).
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
