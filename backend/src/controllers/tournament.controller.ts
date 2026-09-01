@@ -578,6 +578,132 @@ export const removeTeam = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
+export const updateTeam = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { tournamentId, teamId } = req.params;
+    const { teamName, members } = req.body as {
+      teamName?: string;
+      members?: Array<{ playerId?: string; name?: string; isGuest?: boolean }>;
+    };
+
+    const tournament = await TournamentModel.findById(tournamentId);
+    if (!tournament) {
+      return void res.status(404).json({ message: "Torneo no encontrado." });
+    }
+    if (tournament.status !== "upcoming") {
+      return void res.status(400).json({
+        message: "No se pueden editar equipos de un torneo iniciado"
+      });
+    }
+    if (tournament.teamFormationMode !== TEAM_FORMATION_MODES.USER_FORMED) {
+      return void res.status(400).json({
+        message: "Esta acción no aplica al modo de formación de equipos de este torneo"
+      });
+    }
+
+    const team = tournament.teams.find((t) => t.teamId.toString() === teamId);
+    if (!team) {
+      return void res.status(404).json({ message: "Equipo no encontrado." });
+    }
+
+    const canManage = await canManageTournament(tournament, req.authUser);
+    const isCaptain = team.registeredBy?.toString() === req.user;
+    if (!canManage && !isCaptain) {
+      return void res.status(403).json({
+        message: "Solo un organizador del torneo o quien inscribió el equipo puede editarlo"
+      });
+    }
+
+    const expectedSize = FORMAT_TEAM_SIZE[tournament.format];
+    if (!Array.isArray(members) || members.length !== expectedSize) {
+      return void res.status(400).json({
+        message: `El equipo debe tener ${expectedSize} jugadores (formato ${tournament.format})`
+      });
+    }
+
+    const registeredMembers = members.filter((m) => !m.isGuest);
+    const guestMembers = members.filter((m) => m.isGuest);
+    if (registeredMembers.some((m) => !m.playerId)) {
+      return void res.status(400).json({ message: "Falta el usuario de algún miembro" });
+    }
+    if (guestMembers.some((m) => !m.name || !m.name.trim())) {
+      return void res.status(400).json({ message: "Falta el nombre de algún invitado" });
+    }
+
+    const memberUserIds = registeredMembers.map((m) => m.playerId as string);
+    if (isCaptain && !canManage && !memberUserIds.includes(req.user!)) {
+      return void res.status(400).json({
+        message: "Quien se inscribe debe ser parte del equipo"
+      });
+    }
+    const uniqueIds = new Set(memberUserIds);
+    if (uniqueIds.size !== memberUserIds.length) {
+      return void res.status(400).json({ message: "Hay miembros duplicados en el equipo" });
+    }
+
+    for (const memberId of memberUserIds) {
+      const inOther = tournament.teams.some(
+        (t) =>
+          t.teamId.toString() !== teamId &&
+          t.players.some((p) => p.playerId && p.playerId.toString() === memberId)
+      );
+      if (inOther) {
+        return void res.status(400).json({
+          message: "Uno de los miembros ya está inscripto en otro equipo del torneo"
+        });
+      }
+    }
+
+    const users = await User.find({ _id: { $in: memberUserIds } });
+    if (users.length !== memberUserIds.length) {
+      return void res.status(400).json({ message: "Algún miembro no existe" });
+    }
+
+    const newPlayers: IdentifiablePlayer[] = [
+      ...users.map((u) => ({ playerId: u._id, isGuest: false })),
+      ...guestMembers.map((g) => ({ name: g.name, isGuest: true }))
+    ];
+    const capDenial = await enforceLeagueCap(tournament.league, newPlayers, req.authUser!.id);
+    if (capDenial) return void res.status(402).json(capDenial);
+
+    const previousIds = new Set(
+      team.players.filter((p) => !p.isGuest && p.playerId).map((p) => p.playerId!.toString())
+    );
+    const newlyAdded = users.filter((u) => !previousIds.has((u._id as mongoose.Types.ObjectId).toString()));
+
+    team.name = teamName && teamName.trim() ? teamName : team.name;
+    team.players = [
+      ...users.map((u) => ({
+        playerId: u._id as mongoose.Types.ObjectId,
+        name: u.username,
+        isGuest: false
+      })),
+      ...guestMembers.map((g) => ({
+        name: g.name!.trim(),
+        isGuest: true
+      }))
+    ];
+    await tournament.save();
+
+    if (newlyAdded.length > 0) {
+      void notifyTournamentSignup(
+        newlyAdded.map((u) => ({
+          _id: u._id,
+          email: u.email,
+          username: u.username,
+          notificationPrefs: u.notificationPrefs
+        })),
+        tournament.name,
+        String(tournament._id)
+      );
+    }
+
+    res.status(200).json({ message: "Equipo actualizado", team });
+  } catch (error) {
+    res.status(500).json({ message: "Error al editar el equipo", error });
+  }
+};
+
 export const registerToTournament = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

@@ -174,6 +174,12 @@ const TournamentDetails = () => {
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
 
+  const [editTeamOpen, setEditTeamOpen] = useState(false);
+  const [editTeamId, setEditTeamId] = useState('');
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamMembers, setEditTeamMembers] = useState<UserOption[]>([]);
+  const [editTeamGuests, setEditTeamGuests] = useState<string[]>([]);
+
   const [guestOpen, setGuestOpen] = useState(false);
   const [guestTeamName, setGuestTeamName] = useState('');
   const [guestNames, setGuestNames] = useState<string[]>([]);
@@ -456,6 +462,52 @@ const TournamentDetails = () => {
       fetchData();
     } catch (err) {
       handleAddPlayersError(err, 'Error en la inscripción');
+    }
+  };
+
+  const openEditTeam = (t: Team) => {
+    const others = t.players.filter((p) => p.playerId !== currentUserId);
+    setEditTeamId(t.teamId);
+    setEditTeamName(t.name);
+    setEditTeamMembers(
+      others
+        .filter((p) => !p.isGuest && p.playerId)
+        .map((p) => ({ _id: p.playerId as string, username: p.name }))
+    );
+    setEditTeamGuests(others.filter((p) => p.isGuest).map((p) => p.name));
+    setEditTeamOpen(true);
+  };
+
+  const handleEditTeam = async () => {
+    if (!id) return;
+    setError('');
+    setPlanLimitError(null);
+    if (!editTeamName.trim()) {
+      setError('Ingresá el nombre del equipo');
+      return;
+    }
+    const guestList = editTeamGuests.filter((g) => g.trim());
+    const members = [
+      { playerId: currentUserId, isGuest: false },
+      ...editTeamMembers.map((m) => ({ playerId: m._id, name: m.username, isGuest: false })),
+      ...guestList.map((g) => ({ name: g, isGuest: true }))
+    ];
+    if (members.length !== teamSize) {
+      setError(`Faltan integrantes: ${members.length}/${teamSize}`);
+      return;
+    }
+    try {
+      await apiRequest(API_ROUTES.TOURNAMENTS.UPDATE_TEAM(id, editTeamId), {
+        method: 'PUT',
+        body: JSON.stringify({ teamName: editTeamName, members })
+      });
+      setEditTeamOpen(false);
+      setEditTeamMembers([]);
+      setEditTeamGuests([]);
+      setInfo('Equipo actualizado');
+      fetchData();
+    } catch (err) {
+      handleAddPlayersError(err, 'Error al editar el equipo');
     }
   };
 
@@ -1109,15 +1161,22 @@ const TournamentDetails = () => {
                             {t.players.map((p) => p.name).join(', ')}
                           </Typography>
                         </Box>
-                        {isCreator && (
-                          <Button
-                            size="small"
-                            color="error"
-                            onClick={() => handleCreatorRemoveTeam(t.teamId)}
-                          >
-                            Quitar
-                          </Button>
-                        )}
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {t.registeredBy === currentUserId && (
+                            <Button size="small" onClick={() => openEditTeam(t)}>
+                              Editar
+                            </Button>
+                          )}
+                          {isCreator && (
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => handleCreatorRemoveTeam(t.teamId)}
+                            >
+                              Quitar
+                            </Button>
+                          )}
+                        </Box>
                       </Paper>
                     ))
                   )}
@@ -1415,6 +1474,72 @@ const TournamentDetails = () => {
             <Button onClick={() => { setRegisterOpen(false); setRegisterGuests([]); }}>Cancelar</Button>
             <Button variant="contained" onClick={handleRegister}>
               Inscribirme
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={editTeamOpen}
+          onClose={() => { setEditTeamOpen(false); setEditTeamMembers([]); setEditTeamGuests([]); }}
+          fullWidth
+          maxWidth="sm"
+        >
+          <DialogTitle>Editar equipo</DialogTitle>
+          <DialogContent>
+            <Box>
+              <TextField
+                fullWidth
+                label="Nombre del equipo"
+                value={editTeamName}
+                onChange={(e) => setEditTeamName(e.target.value)}
+                margin="normal"
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Vos ya estás incluido. Completá los otros {teamSize - 1}{' '}
+                {teamSize === 2 ? 'lugar' : 'lugares'} con compañeros registrados o invitados sin cuenta.
+              </Typography>
+              <Autocomplete
+                multiple
+                options={userOptions}
+                loading={searchingUsers}
+                getOptionLabel={(o) => o.username}
+                value={editTeamMembers}
+                onChange={(_, v) => {
+                  if (v.length <= teamSize - 1) setEditTeamMembers(v);
+                }}
+                onInputChange={(_, v) => searchUsers(v)}
+                isOptionEqualToValue={(o, v) => o._id === v._id}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label={`Compañeros registrados (${editTeamMembers.length}/${teamSize - 1})`}
+                    margin="normal"
+                    helperText="Podés completar el resto del equipo con invitados sin cuenta"
+                  />
+                )}
+              />
+              {Array.from({ length: Math.max(0, teamSize - 1 - editTeamMembers.length) }).map((_, i) => (
+                <TextField
+                  key={i}
+                  fullWidth
+                  label={`Invitado ${i + 1} (nombre)`}
+                  value={editTeamGuests[i] || ''}
+                  onChange={(e) => {
+                    const arr = [...editTeamGuests];
+                    arr[i] = e.target.value;
+                    setEditTeamGuests(arr);
+                  }}
+                  margin="dense"
+                />
+              ))}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => { setEditTeamOpen(false); setEditTeamMembers([]); setEditTeamGuests([]); }}>
+              Cancelar
+            </Button>
+            <Button variant="contained" onClick={handleEditTeam}>
+              Guardar
             </Button>
           </DialogActions>
         </Dialog>

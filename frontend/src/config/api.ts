@@ -39,6 +39,7 @@ const API_ROUTES = {
     DELETE: (id: string) => `${API_BASE_URL}/tournaments/${id}`,
     ADD_TEAM: (id: string) => `${API_BASE_URL}/tournaments/${id}/teams`,
     REMOVE_TEAM: (id: string, teamId: string) => `${API_BASE_URL}/tournaments/${id}/teams/${teamId}`,
+    UPDATE_TEAM: (id: string, teamId: string) => `${API_BASE_URL}/tournaments/${id}/teams/${teamId}`,
     DRAW: (id: string) => `${API_BASE_URL}/tournaments/${id}/draw`,
     START: (id: string) => `${API_BASE_URL}/tournaments/${id}/start`,
     REGISTER: (id: string) => `${API_BASE_URL}/tournaments/${id}/register`,

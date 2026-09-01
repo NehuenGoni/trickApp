@@ -8,6 +8,7 @@ import {
   deleteTournament,
   createTeamInTournament,
   removeTeam,
+  updateTeam,
   drawTournament,
   startTournament,
   registerToTournament,
@@ -53,6 +54,7 @@ router.delete("/:id/signups/admin/:signupId", authMiddleware, creatorRemoveSignu
 router.put("/:id/roster", authMiddleware, replaceTournamentRoster);
 
 router.post("/:tournamentId/teams", authMiddleware, createTeamInTournament);
+router.put("/:tournamentId/teams/:teamId", authMiddleware, updateTeam);
 router.delete("/:tournamentId/teams/:teamId", authMiddleware, removeTeam);
 
 export default router;
