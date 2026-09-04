@@ -29,6 +29,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TvIcon from '@mui/icons-material/Tv';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import EditNoteIcon from '@mui/icons-material/EditNote';
 import NavBar from '../../components/NavBar';
 import SurfaceCard from '../../components/SurfaceCard';
 import TournamentLogo from '../../components/TournamentLogo';
@@ -38,9 +39,11 @@ import BracketFormatPreview from '../../components/BracketFormatPreview';
 import PlanLimitAlert from '../../components/PlanLimitAlert';
 import useCurrentUser from '../../hooks/useCurrentUser';
 import useBilling, { clearBillingCache } from '../../hooks/useBilling';
+import useManageableLeagues from '../../hooks/useManageableLeagues';
 import { TournamentLogoMeta, TeamFormationMode, poolBasedMode } from '../../types/tournament';
 import { LeagueRef } from '../../types/league';
 import API_ROUTES, { apiRequest, PaymentRequiredError } from '../../config/api';
+import { canManageTournament } from '../../utils/tournamentPermissions';
 import {
   PHASE_LABELS,
   findFocusMatch,
@@ -49,8 +52,10 @@ import {
   firstRoundSlotsFor,
   restingCountFor,
   splitDraftOrder,
-  zoneOfSlot
+  zoneOfSlot,
+  downstreamBlockers
 } from '../../utils/tournament';
+import MatchResultDialog from '../../components/MatchResultDialog';
 
 interface PlayerLite {
   playerId?: string;
@@ -74,6 +79,8 @@ interface Match {
   phase: string;
   status: string;
   bracketSlot?: string;
+  feedsWinnerTo?: string;
+  feedsLoserTo?: string;
 }
 
 interface Team {
@@ -139,6 +146,7 @@ const TournamentDetails = () => {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const { user, isAdmin } = useCurrentUser();
+  const { leagueIds: manageableLeagueIds } = useManageableLeagues();
   const { billing } = useBilling();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -149,6 +157,9 @@ const TournamentDetails = () => {
   // aparte del error genérico porque necesita el CTA condicional a "Ver
   // planes" (`canUpgrade`), que un string suelto no puede cargar.
   const [planLimitError, setPlanLimitError] = useState<{ message: string; canUpgrade: boolean } | null>(null);
+  // Partido que el organizador está anotando/corrigiendo a mano (ver
+  // `renderMatchCard` y el `<MatchResultDialog>` al final del componente).
+  const [resultTarget, setResultTarget] = useState<Match | null>(null);
   const currentUserId = localStorage.getItem('userId') || '';
   const [logoOpen, setLogoOpen] = useState(false);
 
@@ -288,7 +299,7 @@ const TournamentDetails = () => {
     };
   }, [creatorAddPlayerOpen, tournament?.league, billing, user?._id]);
 
-  const isCreator = !!tournament && tournament.createdBy === currentUserId;
+  const canManage = !!tournament && canManageTournament(user, tournament, manageableLeagueIds);
   const teamSize = tournament ? TEAM_SIZE[tournament.format] : 2;
   const numberOfTeams = tournament?.numberOfTeams ?? 8; // torneos legacy: el tamaño de siempre.
   const targetIndividuals = tournament ? numberOfTeams * TEAM_SIZE[tournament.format] : 16;
@@ -889,23 +900,34 @@ const TournamentDetails = () => {
             })}
           </Box>
 
-          {userInMatch && match.status === 'in_progress' && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-              <Button
-                variant="contained"
-                startIcon={<PlayArrowIcon />}
-                onClick={() => handlePlay(match._id)}
-                sx={{
-                  backgroundColor: '#fbc02d',
-                  color: '#000',
-                  fontWeight: 'bold',
-                  '&:hover': { backgroundColor: '#D4AF37' }
-                }}
-              >
-                Jugar
-              </Button>
+          {(userInMatch && match.status === 'in_progress') || (canManage && match.teams.length === 2) ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+              {userInMatch && match.status === 'in_progress' && (
+                <Button
+                  variant="contained"
+                  startIcon={<PlayArrowIcon />}
+                  onClick={() => handlePlay(match._id)}
+                  sx={{
+                    backgroundColor: '#fbc02d',
+                    color: '#000',
+                    fontWeight: 'bold',
+                    '&:hover': { backgroundColor: '#D4AF37' }
+                  }}
+                >
+                  Jugar
+                </Button>
+              )}
+              {canManage && match.teams.length === 2 && (
+                <Button
+                  variant="outlined"
+                  startIcon={<EditNoteIcon />}
+                  onClick={() => setResultTarget(match)}
+                >
+                  {match.status === 'finished' ? 'Corregir' : 'Anotar'}
+                </Button>
+              )}
             </Box>
-          )}
+          ) : null}
         </Paper>
       </Grid>
     );
@@ -957,6 +979,12 @@ const TournamentDetails = () => {
     fetchData();
   };
 
+  const handleMatchResultSaved = (message: string) => {
+    setInfo(message);
+    setResultTarget(null);
+    fetchData();
+  };
+
   return (
     <Box>
       <NavBar />
@@ -984,7 +1012,7 @@ const TournamentDetails = () => {
                 Transmitir
               </Button>
             )}
-            {tournament.status === 'upcoming' && isCreator && (
+            {tournament.status === 'upcoming' && canManage && (
               <Button
                 variant="contained"
                 color="success"
@@ -1060,7 +1088,7 @@ const TournamentDetails = () => {
 
             {/* El logo es cosmético, así que se puede cambiar en cualquier
                 estado del torneo, no solo mientras está en 'upcoming'. */}
-            {(isCreator || isAdmin) && (
+            {(canManage || isAdmin) && (
               <Button
                 size="small"
                 startIcon={<PhotoCameraIcon />}
@@ -1109,7 +1137,7 @@ const TournamentDetails = () => {
                           size="small"
                           variant={s.isGuest ? 'outlined' : 'filled'}
                           label={s.isGuest ? `${s.name} (invitado)` : s.name}
-                          onDelete={isCreator ? () => handleCreatorRemovePlayer(s.signupId) : undefined}
+                          onDelete={canManage ? () => handleCreatorRemovePlayer(s.signupId) : undefined}
                         />
                       ))}
                       {fixedTeams.map((t) =>
@@ -1167,7 +1195,7 @@ const TournamentDetails = () => {
                               Editar
                             </Button>
                           )}
-                          {isCreator && (
+                          {canManage && (
                             <Button
                               size="small"
                               color="error"
@@ -1194,27 +1222,27 @@ const TournamentDetails = () => {
                     Desinscribirme
                   </Button>
                 )}
-                {isCreator && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
+                {canManage && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
                   <Button variant="outlined" onClick={() => setCreatorAddTeamOpen(true)}>
                     Agregar equipo
                   </Button>
                 )}
-                {isCreator && slotsFilled < totalSlots && poolBased && (
+                {canManage && slotsFilled < totalSlots && poolBased && (
                   <Button variant="outlined" onClick={() => setCreatorAddPlayerOpen(true)}>
                     Agregar jugador
                   </Button>
                 )}
-                {isCreator && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
+                {canManage && slotsFilled < totalSlots && tournament.teamFormationMode === 'user-formed' && (
                   <Button variant="outlined" onClick={() => setGuestOpen(true)}>
                     Agregar invitados
                   </Button>
                 )}
-                {isCreator && tournament.teamFormationMode === 'creator-formed' && (
+                {canManage && tournament.teamFormationMode === 'creator-formed' && (
                   <Button variant="outlined" onClick={() => setRosterOpen(true)}>
                     {tournament.teams.length > 0 ? 'Editar equipos' : 'Armar equipos'}
                   </Button>
                 )}
-                {isCreator && tournament.teamFormationMode === 'user-formed' && tournament.teams.length >= 2 && (
+                {canManage && tournament.teamFormationMode === 'user-formed' && tournament.teams.length >= 2 && (
                   <Button variant="outlined" onClick={() => setRosterOpen(true)}>
                     Reorganizar jugadores
                   </Button>
@@ -1224,7 +1252,7 @@ const TournamentDetails = () => {
             </Accordion>
           )}
 
-          {tournament.status === 'upcoming' && isCreator && cupCompletos && (
+          {tournament.status === 'upcoming' && canManage && cupCompletos && (
             <Accordion sx={{ mb: 3 }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Typography variant="h6">Sorteo</Typography>
@@ -1998,6 +2026,18 @@ const TournamentDetails = () => {
             </Button>
           </DialogActions>
         </Dialog>
+
+        <MatchResultDialog
+          open={!!resultTarget}
+          onClose={() => setResultTarget(null)}
+          match={resultTarget}
+          teamNames={[
+            resultTarget ? renderTeamName(resultTarget.teams[0]?.teamId) ?? 'Equipo 1' : 'Equipo 1',
+            resultTarget ? renderTeamName(resultTarget.teams[1]?.teamId) ?? 'Equipo 2' : 'Equipo 2'
+          ]}
+          blockers={resultTarget ? downstreamBlockers(resultTarget, matches) : []}
+          onSaved={handleMatchResultSaved}
+        />
       </Container>
     </Box>
   );

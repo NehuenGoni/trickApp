@@ -4,9 +4,15 @@ import Match, { IMatch, IMatchTeam } from "../models/Match";
 import Tournament from "../models/Tournament";
 import { MATCH_TYPES, MATCH_STATUS, MAX_SCORE, MATCH_PHASE_LABELS } from "../config/constants";
 import { positionsFromSlot } from "../utils/bracket";
-import { closeTournament } from "./tournament.controller";
+import { revertTournamentPoints } from "./tournament.controller";
 import { canManageTournament } from "../utils/tournamentAccess";
 import { notifyMatchResults, resolveUsers, MatchResultEntry } from "../services/notifications";
+import {
+  propagateResult,
+  downstreamBlockers,
+  detachDownstream,
+  maybeCloseTournament
+} from "../services/matchResult";
 
 interface AuthRequest extends Request {
   user?: string;
@@ -192,52 +198,27 @@ const advanceWinnerLoser = async (
 ): Promise<void> => {
   if (!current.winner || !current.losingTeam) return;
 
-  const enrichTeam = (id: mongoose.Types.ObjectId): IMatchTeam | null => {
-    const t = current.teams.find((x) => x.teamId.toString() === id.toString());
-    if (!t) return null;
-    return {
-      teamId: t.teamId,
-      score: 0,
-      players: t.players.map((p) => ({
-        playerId: p.playerId,
-        username: p.username,
-        isGuest: !!p.isGuest
-      }))
-    };
-  };
+  const winnerTeam = current.teams.find(
+    (t) => t.teamId.toString() === (current.winner as mongoose.Types.ObjectId).toString()
+  ) as IMatchTeam | undefined;
+  const loserTeam = current.teams.find(
+    (t) => t.teamId.toString() === (current.losingTeam as mongoose.Types.ObjectId).toString()
+  ) as IMatchTeam | undefined;
 
-  const winnerTeam = enrichTeam(current.winner as mongoose.Types.ObjectId);
-  const loserTeam = enrichTeam(current.losingTeam as mongoose.Types.ObjectId);
-
-  const propagate = async (
-    targetId: mongoose.Types.ObjectId | undefined,
-    team: IMatchTeam | null
-  ): Promise<IMatch | null> => {
-    if (!targetId || !team) return null;
-    const target = await Match.findById(targetId);
-    if (!target) return null;
-    const already = target.teams.some(
-      (t) => t.teamId.toString() === team.teamId.toString()
-    );
-    if (!already) {
-      target.teams.push(team);
-      if (target.teams.length === 2 && target.status === MATCH_STATUS.PENDING) {
-        target.status = MATCH_STATUS.IN_PROGRESS;
-      }
-      await target.save();
-    }
-    return target;
-  };
-
-  const winnerTarget = await propagate(current.feedsWinnerTo as mongoose.Types.ObjectId, winnerTeam);
-  const loserTarget = await propagate(current.feedsLoserTo as mongoose.Types.ObjectId, loserTeam);
+  const { winnerTarget, loserTarget } = await propagateResult(current);
 
   // Aviso de resultado de partido: opt-in (`notificationPrefs.matchResults`),
   // ver la advertencia de volumen del plan — es el evento de mayor frecuencia
   // de todo el sistema de notificaciones.
   if (current.type !== MATCH_TYPES.TOURNAMENT || !current.tournament || !current.bracketSlot) return;
 
-  const infos = collectMatchResultInfos(current.bracketSlot, winnerTeam, loserTeam, winnerTarget, loserTarget);
+  const infos = collectMatchResultInfos(
+    current.bracketSlot,
+    winnerTeam ?? null,
+    loserTeam ?? null,
+    winnerTarget,
+    loserTarget
+  );
   if (infos.length === 0) return;
 
   const [tournament, recipients] = await Promise.all([
@@ -329,27 +310,12 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
     if (match.status === MATCH_STATUS.FINISHED && match.type === MATCH_TYPES.TOURNAMENT) {
       await advanceWinnerLoser(match);
 
-      // Un slot "decide algo" cuando `positionsFromSlot` resuelve al menos un
-      // lado (el caso normal, zona de 2: ambos lados juntos; o el de una zona
-      // impar, donde el perdedor puede quedar decidido solo — ver
-      // utils/bracket.ts). El torneo está listo para cerrar cuando ya no
-      // queda ningún partido decisivo sin terminar. Se chequea solo si ESTE
-      // partido era decisivo: si no lo era, terminarlo no pudo haber
-      // completado nada nuevo.
-      const isDecisiveSlot = (slot?: string | null): boolean => {
-        if (!slot) return false;
-        const outcome = positionsFromSlot(slot);
-        return !!outcome && (outcome.winner !== null || outcome.loser !== null);
-      };
-      if (match.tournament && isDecisiveSlot(match.bracketSlot)) {
-        const pending = await Match.find({
-          tournament: match.tournament,
-          status: { $ne: MATCH_STATUS.FINISHED }
-        }).select("bracketSlot");
-        const remaining = pending.filter((m) => isDecisiveSlot(m.bracketSlot)).length;
-        if (remaining === 0) {
-          await closeTournament(match.tournament as mongoose.Types.ObjectId);
-        }
+      // El torneo está listo para cerrar cuando ya no queda ningún partido
+      // decisivo sin terminar (ver `maybeCloseTournament` en
+      // `services/matchResult.ts`, que hace ese chequeo y también lo usan el
+      // panel de admin y la carga manual del organizador).
+      if (match.tournament) {
+        await maybeCloseTournament(match.tournament as mongoose.Types.ObjectId, match.bracketSlot);
       }
     }
 
@@ -446,6 +412,240 @@ export const deleteMatch = async (req: Request, res: Response): Promise<void> =>
     res
       .status(400)
       .json({ message: "Error al eliminar el partido", error: { message: err.message } });
+  }
+};
+
+interface SetResultBody {
+  scores?: { teamId: string; score: number }[];
+  confirmReopen?: boolean;
+}
+
+/**
+ * El truco se juega hasta 30. Exactamente un equipo tiene que llegar a ese
+ * número para que el resultado sea válido — es la misma regla que ya aplica
+ * `updateMatchScore` (dos equipos en 30 a la vez es un estado imposible), pero
+ * acá además hace falta que ALGUNO de los dos haya llegado: a diferencia del
+ * marcador en vivo (que finaliza solo), acá el ganador nunca se manda
+ * explícito, se deduce del marcador para que no se pueda cargar un resultado
+ * que no cierra como una mano de truco real.
+ */
+const trucoOutcome = (
+  scores: { teamId: string; score: number }[]
+): { winnerId: string; loserId: string } | null => {
+  const winners = scores.filter((s) => s.score === MAX_SCORE);
+  if (winners.length !== 1) return null;
+  const loser = scores.find((s) => s.teamId !== winners[0].teamId);
+  if (!loser) return null;
+  return { winnerId: winners[0].teamId, loserId: loser.teamId };
+};
+
+const blockersPayload = (blockers: IMatch[]) =>
+  blockers.map((b) => ({ _id: b._id, phase: b.phase, bracketSlot: b.bracketSlot }));
+
+/**
+ * Carga o corrige a mano el resultado final de un partido de torneo — la
+ * "planilla" del organizador: en vez de llevar el marcador punto a punto
+ * desde el celular de un jugador (`PATCH /matches/:id/score` +
+ * `PUT /matches/:id`, que usa `Scoreboard`), el organizador tipea el
+ * marcador final directamente. Solo para quien gestiona el torneo
+ * (`canManageTournament`): un jugador sigue usando el marcador en vivo.
+ *
+ * Reutiliza el mismo cableado de bracket que el marcador en vivo
+ * (`propagateResult`/`maybeCloseTournament` de `services/matchResult.ts`), así
+ * que cargar a mano no puede desviar a nadie de la rama que le corresponde.
+ *
+ * Corregir un partido YA finalizado está permitido, pero acotado para no
+ * perder trabajo sin que el organizador lo pida: si el partido siguiente ya
+ * tiene resultado cargado, se rechaza con 409 y la lista de bloqueadores —
+ * hay que deshacer ese resultado primero (`DELETE /matches/:id/result`). Y si
+ * el torneo ya estaba cerrado, hace falta `confirmReopen: true` explícito,
+ * porque reabrirlo mueve puntos del ranking global.
+ */
+export const setMatchResult = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { scores, confirmReopen } = req.body as SetResultBody;
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return void res.status(404).json({ message: "Partido no encontrado" });
+    }
+    if (match.type !== MATCH_TYPES.TOURNAMENT || !match.tournament) {
+      return void res.status(400).json({ message: "Este endpoint es solo para partidos de torneo" });
+    }
+    if (match.teams.length !== 2) {
+      return void res.status(400).json({ message: "El partido todavía no tiene los 2 equipos asignados" });
+    }
+
+    const tournament = await Tournament.findById(match.tournament);
+    if (!tournament) {
+      return void res.status(404).json({ message: "Torneo no encontrado" });
+    }
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
+    }
+
+    if (!Array.isArray(scores) || scores.length !== 2) {
+      return void res.status(400).json({ message: "Se requieren los 2 marcadores" });
+    }
+    for (const s of scores) {
+      if (typeof s.score !== "number" || !Number.isInteger(s.score) || s.score < 0 || s.score > MAX_SCORE) {
+        return void res.status(400).json({
+          message: `Score inválido (entero entre 0 y ${MAX_SCORE})`
+        });
+      }
+      if (!match.teams.some((t) => t.teamId.toString() === s.teamId)) {
+        return void res.status(400).json({
+          message: "teamId no pertenece a este partido",
+          error: { teamId: s.teamId }
+        });
+      }
+    }
+    const outcome = trucoOutcome(scores);
+    if (!outcome) {
+      return void res.status(400).json({
+        message: `Para cargar el resultado, uno de los dos equipos (y solo uno) tiene que llegar a ${MAX_SCORE} puntos`
+      });
+    }
+
+    const wasFinished = match.status === MATCH_STATUS.FINISHED;
+    const winnerChanged = match.winner?.toString() !== outcome.winnerId;
+
+    // Editar solo el marcador de un partido ya finalizado, sin tocar quién
+    // ganó: no mueve nada del cuadro, así que no pasa por ninguna de las
+    // guardas de abajo.
+    if (wasFinished && !winnerChanged) {
+      for (const s of scores) {
+        const team = match.teams.find((t) => t.teamId.toString() === s.teamId)!;
+        team.score = s.score;
+      }
+      await match.save();
+      return void res.status(200).json({ message: "Marcador actualizado", match });
+    }
+
+    if (wasFinished) {
+      const blockers = await downstreamBlockers(match);
+      if (blockers.length > 0) {
+        return void res.status(409).json({
+          message:
+            "No se puede corregir: el partido siguiente ya tiene resultado cargado. Deshacé ese resultado primero.",
+          blockers: blockersPayload(blockers)
+        });
+      }
+    }
+
+    const resyncMode = tournament.status === "completed";
+    if (resyncMode && !confirmReopen) {
+      const affectedPlayers = tournament.playerStats.filter((s) => !s.isGuest && s.playerId).length;
+      return void res.status(409).json({
+        message: "El torneo ya está cerrado. Corregir este resultado va a reabrirlo y recalcular el ranking.",
+        requiresConfirmation: true,
+        impact: { affectedPlayers }
+      });
+    }
+
+    // A partir de acá el partido queda finalizado sí o sí: `detachDownstream`
+    // necesita el ganador/perdedor VIEJOS (no bloqueado arriba implica que
+    // ninguno de los dos destinos está terminado, así que esto nunca dispara
+    // la rama recursiva de la cascada del lado del organizador).
+    if (wasFinished) {
+      await detachDownstream(match);
+    }
+
+    for (const s of scores) {
+      const team = match.teams.find((t) => t.teamId.toString() === s.teamId)!;
+      team.score = s.score;
+    }
+    match.winner = new mongoose.Types.ObjectId(outcome.winnerId);
+    match.losingTeam = new mongoose.Types.ObjectId(outcome.loserId);
+    match.status = MATCH_STATUS.FINISHED;
+    await match.save();
+
+    await advanceWinnerLoser(match);
+    await maybeCloseTournament(match.tournament as mongoose.Types.ObjectId, match.bracketSlot, resyncMode ? "resync" : "close");
+
+    res.status(200).json({
+      message: wasFinished ? "Resultado corregido" : "Resultado cargado",
+      match
+    });
+  } catch (error) {
+    const err = error as { message?: string };
+    res
+      .status(400)
+      .json({ message: "Error al cargar el resultado", error: { message: err.message } });
+  }
+};
+
+/**
+ * Deshace el resultado de un partido: lo devuelve a `in_progress`, limpia
+ * ganador/perdedor/marcador y desprende a los equipos que había empujado al
+ * partido siguiente. Es el otro lado de la corrección bloqueada en
+ * `setMatchResult`: si un partido posterior ya tiene resultado y por eso no
+ * se puede corregir el de más atrás, esto es lo que hay que llamar primero —
+ * de a un partido por vez, viendo qué se deshace en cada paso.
+ */
+export const clearMatchResult = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const confirmReopen = req.body?.confirmReopen === true || req.query.confirmReopen === "true";
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return void res.status(404).json({ message: "Partido no encontrado" });
+    }
+    if (match.type !== MATCH_TYPES.TOURNAMENT || !match.tournament) {
+      return void res.status(400).json({ message: "Este endpoint es solo para partidos de torneo" });
+    }
+    if (match.status !== MATCH_STATUS.FINISHED) {
+      return void res.status(409).json({ message: "Este partido no está finalizado" });
+    }
+
+    const tournament = await Tournament.findById(match.tournament);
+    if (!tournament) {
+      return void res.status(404).json({ message: "Torneo no encontrado" });
+    }
+    if (!(await canManageTournament(tournament, req.authUser))) {
+      return void res.status(403).json({ message: "No tenés permisos para gestionar este torneo" });
+    }
+
+    const blockers = await downstreamBlockers(match);
+    if (blockers.length > 0) {
+      return void res.status(409).json({
+        message:
+          "No se puede deshacer: el partido siguiente ya tiene resultado cargado. Deshacé ese resultado primero.",
+        blockers: blockersPayload(blockers)
+      });
+    }
+
+    const resyncMode = tournament.status === "completed";
+    if (resyncMode && !confirmReopen) {
+      const affectedPlayers = tournament.playerStats.filter((s) => !s.isGuest && s.playerId).length;
+      return void res.status(409).json({
+        message: "El torneo ya está cerrado. Deshacer este resultado va a reabrirlo y recalcular el ranking.",
+        requiresConfirmation: true,
+        impact: { affectedPlayers }
+      });
+    }
+
+    await detachDownstream(match);
+
+    match.winner = undefined;
+    match.losingTeam = undefined;
+    for (const t of match.teams) t.score = 0;
+    match.status = MATCH_STATUS.IN_PROGRESS;
+    await match.save();
+
+    if (resyncMode) {
+      await revertTournamentPoints(tournament);
+      tournament.playerStats = [];
+      tournament.status = "in_progress";
+      await tournament.save();
+    }
+
+    res.status(200).json({ message: "Resultado deshecho", match });
+  } catch (error) {
+    const err = error as { message?: string };
+    res
+      .status(400)
+      .json({ message: "Error al deshacer el resultado", error: { message: err.message } });
   }
 };
 

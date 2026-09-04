@@ -22,6 +22,7 @@ import {
   notifyTournamentClosedFromStats
 } from "./tournament.controller";
 import { applyTournamentUpdate } from "../services/tournamentUpdate";
+import { detachDownstream, propagateResult } from "../services/matchResult";
 import { withTransaction } from "../utils/withTransaction";
 
 interface AuthRequest extends Request {
@@ -280,85 +281,6 @@ export const getTournamentMatches = async (req: Request, res: Response): Promise
 };
 
 /**
- * Deshace la propagación de un partido ya finalizado: saca los equipos que había
- * empujado a las siguientes rondas y, si esas rondas ya se habían jugado, las
- * revierte también en cascada. La recursión está acotada por la profundidad
- * del cuadro (`log2(numberOfTeams)` niveles como máximo — 5 incluso en el
- * torneo más grande, 32 equipos), así que nunca corre riesgo de desbordarse.
- */
-const rollbackDownstream = async (match: IMatch): Promise<number> => {
-  let reverted = 0;
-
-  const detach = async (
-    targetId: mongoose.Types.ObjectId | undefined,
-    teamId: mongoose.Types.ObjectId | undefined
-  ) => {
-    if (!targetId || !teamId) return;
-    const target = await Match.findById(targetId);
-    if (!target) return;
-
-    const hadTeam = target.teams.some((t) => t.teamId.toString() === teamId.toString());
-    if (!hadTeam) return;
-
-    if (target.status === MATCH_STATUS.FINISHED) {
-      reverted += await rollbackDownstream(target);
-      target.winner = undefined;
-      target.losingTeam = undefined;
-    }
-
-    target.teams = target.teams.filter(
-      (t) => t.teamId.toString() !== teamId.toString()
-    ) as typeof target.teams;
-    target.status = target.teams.length === 2 ? MATCH_STATUS.IN_PROGRESS : MATCH_STATUS.PENDING;
-    for (const t of target.teams) t.score = 0;
-
-    await target.save();
-    reverted += 1;
-  };
-
-  await detach(match.feedsWinnerTo as mongoose.Types.ObjectId, match.winner as mongoose.Types.ObjectId);
-  await detach(match.feedsLoserTo as mongoose.Types.ObjectId, match.losingTeam as mongoose.Types.ObjectId);
-
-  return reverted;
-};
-
-const propagateResult = async (match: IMatch): Promise<void> => {
-  if (!match.winner || !match.losingTeam) return;
-
-  const buildTeam = (id: mongoose.Types.ObjectId) => {
-    const t = match.teams.find((x) => x.teamId.toString() === id.toString());
-    if (!t) return null;
-    return {
-      teamId: t.teamId,
-      score: 0,
-      players: t.players.map((p) => ({
-        playerId: p.playerId,
-        username: p.username,
-        isGuest: !!p.isGuest
-      }))
-    };
-  };
-
-  const push = async (
-    targetId: mongoose.Types.ObjectId | undefined,
-    team: ReturnType<typeof buildTeam>
-  ) => {
-    if (!targetId || !team) return;
-    const target = await Match.findById(targetId);
-    if (!target) return;
-    if (target.teams.some((t) => t.teamId.toString() === team.teamId.toString())) return;
-    target.teams.push(team as unknown as typeof target.teams[number]);
-    if (target.teams.length === 2 && target.status === MATCH_STATUS.PENDING) {
-      target.status = MATCH_STATUS.IN_PROGRESS;
-    }
-    await target.save();
-  };
-
-  await push(match.feedsWinnerTo as mongoose.Types.ObjectId, buildTeam(match.winner as mongoose.Types.ObjectId));
-  await push(match.feedsLoserTo as mongoose.Types.ObjectId, buildTeam(match.losingTeam as mongoose.Types.ObjectId));
-};
-
-/**
  * Corrige un partido sin importar su estado. Si cambia el ganador de un partido
  * ya finalizado, revierte el cuadro aguas abajo y vuelve a propagar; si el torneo
  * estaba cerrado, devuelve los puntos y lo reabre.
@@ -440,7 +362,7 @@ export const updateMatch = async (req: Request, res: Response): Promise<void> =>
     let reopenedTournament = false;
 
     if (match.tournament && (winnerChanged || unfinished)) {
-      revertedMatches = await rollbackDownstream(previous);
+      revertedMatches = await detachDownstream(previous);
 
       const tournament = await TournamentModel.findById(match.tournament);
       if (tournament && (tournament.pointsAwarded || tournament.status === "completed")) {

@@ -421,3 +421,32 @@ export const findFocusMatch = <T extends FocusableMatch>(
   const pool = mine.length > 0 ? mine : live;
   return [...pool].sort((a, b) => slotRank(a.bracketSlot) - slotRank(b.bracketSlot))[0];
 };
+
+// Shape mínimo para calcular bloqueadores de una corrección manual: a qué
+// partidos alimenta este partido, y si esos ya terminaron.
+export interface LinkedMatch {
+  _id: string;
+  status: string;
+  phase: string;
+  bracketSlot?: string;
+  feedsWinnerTo?: string;
+  feedsLoserTo?: string;
+}
+
+/**
+ * Partidos ya finalizados que cuelgan directo de `match` — espejo de
+ * `downstreamBlockers` en `backend/src/services/matchResult.ts`. Vacío =
+ * corregir el ganador de `match` no pisa ningún resultado posterior.
+ *
+ * Es solo para avisar en la UI ANTES de intentar guardar (y para nombrar el
+ * partido que hay que deshacer primero): el backend vuelve a validar esto
+ * mismo al recibir el pedido, así que una lista desactualizada acá nunca deja
+ * pisar nada, en el peor caso solo tarda un request de más en avisar.
+ */
+export const downstreamBlockers = <T extends LinkedMatch>(match: T, all: T[]): T[] => {
+  const targetIds = new Set(
+    [match.feedsWinnerTo, match.feedsLoserTo].filter((id): id is string => !!id)
+  );
+  if (targetIds.size === 0) return [];
+  return all.filter((m) => targetIds.has(m._id) && m.status === 'finished');
+};

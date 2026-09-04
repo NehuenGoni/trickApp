@@ -28,7 +28,11 @@ const API_ROUTES = {
     UPDATE: (id: string) => `${API_BASE_URL}/matches/${id}`,
     UPDATE_SCORE: (id: string) => `${API_BASE_URL}/matches/${id}/score`,
     DELETE: (id: string) => `${API_BASE_URL}/matches/${id}`,
-    GET_BY_TOURNAMENT: (tournamentId: string) => `${API_BASE_URL}/matches/tournament/${tournamentId}`
+    GET_BY_TOURNAMENT: (tournamentId: string) => `${API_BASE_URL}/matches/tournament/${tournamentId}`,
+    // Carga manual del organizador: anotar/corregir un resultado final directo
+    // (distinto del marcador en vivo de UPDATE/UPDATE_SCORE).
+    SET_RESULT: (id: string) => `${API_BASE_URL}/matches/${id}/result`,
+    CLEAR_RESULT: (id: string) => `${API_BASE_URL}/matches/${id}/result`
   },
   TOURNAMENTS: {
     CREATE: `${API_BASE_URL}/tournaments`,
@@ -184,6 +188,35 @@ export class EmailNotVerifiedError extends Error {
   }
 }
 
+/**
+ * `PUT/DELETE /matches/:id/result` (carga manual del organizador) responden
+ * así con 409 en dos casos: `blockers` (el partido siguiente ya tiene
+ * resultado, hay que deshacerlo primero) o `requiresConfirmation` (el torneo
+ * ya está cerrado, corregir esto lo reabre y mueve puntos del ranking). Deja
+ * que `MatchResultDialog` distinga esto de un 409 genérico sin depender del
+ * texto del mensaje.
+ */
+export class MatchResultConflictError extends Error {
+  blockers?: Array<{ _id: string; phase?: string; bracketSlot?: string }>;
+  requiresConfirmation?: boolean;
+  impact?: { affectedPlayers: number };
+
+  constructor(
+    message: string,
+    data: {
+      blockers?: MatchResultConflictError['blockers'];
+      requiresConfirmation?: boolean;
+      impact?: MatchResultConflictError['impact'];
+    }
+  ) {
+    super(message);
+    this.name = 'MatchResultConflictError';
+    this.blockers = data.blockers;
+    this.requiresConfirmation = data.requiresConfirmation;
+    this.impact = data.impact;
+  }
+}
+
 export const apiRequest = async (url: string, options: RequestInit & { params?: Record<string, any> } = {}) => {
   const token = localStorage.getItem('token');
   
@@ -255,6 +288,14 @@ export const apiRequest = async (url: string, options: RequestInit & { params?: 
 
       if (response.status === 403 && parsedData?.reason === 'email_not_verified') {
         throw new EmailNotVerifiedError(errorMessage);
+      }
+
+      if (response.status === 409 && (parsedData?.blockers || parsedData?.requiresConfirmation)) {
+        throw new MatchResultConflictError(errorMessage, {
+          blockers: parsedData?.blockers,
+          requiresConfirmation: parsedData?.requiresConfirmation,
+          impact: parsedData?.impact
+        });
       }
 
       if (parsedData?.fallback) {

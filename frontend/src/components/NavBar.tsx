@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useCurrentUser, { clearCurrentUserCache } from '../hooks/useCurrentUser';
+import { clearManageableLeaguesCache } from '../hooks/useManageableLeagues';
 import { getInitials } from '../utils/text';
 import AppLogo from './AppLogo';
 import EmailVerificationBanner from './EmailVerificationBanner';
@@ -85,6 +86,7 @@ const NavBar = ({ showBackButton = false }: NavBarProps) => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     clearCurrentUserCache();
+    clearManageableLeaguesCache();
     navigate('/login');
   };
 
